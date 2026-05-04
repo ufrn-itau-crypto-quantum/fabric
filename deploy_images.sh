@@ -14,9 +14,9 @@ COMPONENTS=("baseos" "ccenv" "orderer" "peer" "tools")
 
 echo "🚀 [1/2] Starting Multi-stage compilation via Dockerfiles of Fabric..."
 
-for COMPONENTE in "${COMPONENTS[@]}"; do
+for COMPONENT in "${COMPONENTS[@]}"; do
     echo -e "\n--------------------------------------------------------"
-    echo "🔨 Building Image: $DOCKER_USER/fabric-$COMPONENTE:$BASE_TAG"
+    echo "🔨 Building Image: $DOCKER_USER/fabric-$COMPONENT:$BASE_TAG"
     echo "--------------------------------------------------------"
     
     sudo docker build \
@@ -26,12 +26,12 @@ for COMPONENTE in "${COMPONENTS[@]}"; do
         --build-arg FABRIC_VER=$FABRIC_VER \
         --build-arg GO_VER=$GO_VER \
         --build-arg GO_TAGS=$GO_TAGS \
-        -f images/${COMPONENTE}/Dockerfile \
-        -t $DOCKER_USER/fabric-${COMPONENTE}:$BASE_TAG \
+        -f images/${COMPONENT}/Dockerfile \
+        -t $DOCKER_USER/fabric-${COMPONENT}:$BASE_TAG \
         .
         
     if [ $? -ne 0 ]; then
-        echo "❌ Critical Error while building component $COMPONENTE. Aborting pipeline."
+        echo "❌ Critical Error while building component $COMPONENT. Aborting pipeline."
         exit 1
     fi
 done
@@ -40,9 +40,9 @@ echo -e "\n========================================================"
 echo "☁️ [2/2] Pushing images to docker hub..."
 echo "========================================================"
 
-for COMPONENTE in "${COMPONENTS[@]}"; do
-    echo "Enviando $DOCKER_USER/fabric-${COMPONENTE}:$BASE_TAG ..."
-    sudo docker push $DOCKER_USER/fabric-${COMPONENTE}:$BASE_TAG
+for COMPONENT in "${COMPONENTS[@]}"; do
+    echo "Pushing $DOCKER_USER/fabric-${COMPONENT}:$BASE_TAG ..."
+    sudo docker push $DOCKER_USER/fabric-${COMPONENT}:$BASE_TAG
 done
 
 echo -e "\n✅ All images built and pushed sucessfully!"
