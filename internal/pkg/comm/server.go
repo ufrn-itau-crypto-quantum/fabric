@@ -10,7 +10,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"io"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +22,20 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
+
+func getTLSKeyLogWriter() io.Writer {
+	path := os.Getenv("SSLKEYLOGFILE")
+	if path == "" {
+		return nil
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return nil
+	}
+
+	return f
+}
 
 type GRPCServer struct {
 	// Listen address for the server specified as hostname:port
@@ -91,6 +107,7 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 				GetCertificate:         getCert,
 				SessionTicketsDisabled: true,
 				CipherSuites:           secureConfig.CipherSuites,
+				KeyLogWriter:           getTLSKeyLogWriter(),
 			})
 
 			if serverConfig.SecOpts.TimeShift > 0 {

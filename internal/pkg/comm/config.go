@@ -10,6 +10,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"io"
+	"os"
 	"time"
 
 	"github.com/hyperledger/fabric-lib-go/common/flogging"
@@ -20,6 +22,20 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 )
+
+func getTLSKeyLogWriter() io.Writer {
+	path := os.Getenv("SSLKEYLOGFILE")
+	if path == "" {
+		return nil
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return nil
+	}
+
+	return f
+}
 
 // Configuration defaults
 
@@ -226,6 +242,7 @@ func (so SecureOptions) TLSConfig() (*tls.Config, error) {
 		MinVersion:            tls.VersionTLS12,
 		ServerName:            so.ServerNameOverride,
 		VerifyPeerCertificate: so.VerifyCertificate,
+		KeyLogWriter:          getTLSKeyLogWriter(),
 	}
 	if len(so.ServerRootCAs) > 0 {
 		tlsConfig.RootCAs = x509.NewCertPool()
