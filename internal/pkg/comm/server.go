@@ -91,6 +91,7 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 				GetCertificate:         getCert,
 				SessionTicketsDisabled: true,
 				CipherSuites:           secureConfig.CipherSuites,
+				KeyLogWriter:           getTLSKeyLogWriter(),
 			})
 
 			if serverConfig.SecOpts.TimeShift > 0 {
