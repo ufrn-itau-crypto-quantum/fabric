@@ -9,6 +9,7 @@ package sw
 import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/mldsa"
 	"crypto/rsa"
 	"crypto/x509"
 	"errors"
@@ -149,6 +150,67 @@ func (*ed25519GoPublicKeyImportOptsKeyImporter) KeyImport(raw interface{}, opts 
 	return &ed25519PublicKey{&lowLevelKey}, nil
 }
 
+type mldsaPrivateKeyImportOptsKeyImporter struct{}
+
+func (*mldsaPrivateKeyImportOptsKeyImporter) KeyImport(raw interface{}, opts bccsp.KeyImportOpts) (bccsp.Key, error) {
+	der, ok := raw.([]byte)
+	if !ok {
+		return nil, errors.New("[MLDSADERPrivateKeyImportOpts] Invalid raw material. Expected byte array.")
+	}
+
+	if len(der) == 0 {
+		return nil, errors.New("[MLDSADERPrivateKeyImportOpts] Invalid raw. It must not be nil.")
+	}
+
+	lowLevelKey, err := derToPrivateKey(der)
+	if err != nil {
+		return nil, fmt.Errorf("Failed converting PKCS8 to ML-DSA private key [%s]", err)
+	}
+
+	mldsaSK, ok := lowLevelKey.(*mldsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("Failed casting to ML-DSA private key. Invalid raw material.")
+	}
+
+	return &mldsaPrivateKey{mldsaSK}, nil
+}
+
+type mldsaPKIXPublicKeyImportOptsKeyImporter struct{}
+
+func (*mldsaPKIXPublicKeyImportOptsKeyImporter) KeyImport(raw interface{}, opts bccsp.KeyImportOpts) (bccsp.Key, error) {
+	der, ok := raw.([]byte)
+	if !ok {
+		return nil, errors.New("Invalid raw material. Expected byte array.")
+	}
+
+	if len(der) == 0 {
+		return nil, errors.New("Invalid raw. It must not be nil.")
+	}
+
+	lowLevelKey, err := derToPublicKey(der)
+	if err != nil {
+		return nil, fmt.Errorf("Failed converting PKIX to ML-DSA public key [%s]", err)
+	}
+
+	mldsaPK, ok := lowLevelKey.(*mldsa.PublicKey)
+	if !ok {
+		return nil, errors.New("Failed casting to ML-DSA public key. Invalid raw material.")
+	}
+
+	return &mldsaPublicKey{mldsaPK}, nil
+}
+
+type mldsaGoPublicKeyImportOptsKeyImporter struct{}
+
+func (*mldsaGoPublicKeyImportOptsKeyImporter) KeyImport(raw interface{}, opts bccsp.KeyImportOpts) (bccsp.Key, error) {
+	lowLevelKey, ok := raw.(*mldsa.PublicKey)
+	if !ok {
+		return nil, errors.New("Invalid raw material. Expected *mldsa.PublicKey.")
+	}
+
+	return &mldsaPublicKey{lowLevelKey}, nil
+}
+
 type rsaGoPublicKeyImportOptsKeyImporter struct{}
 
 func (*rsaGoPublicKeyImportOptsKeyImporter) KeyImport(raw interface{}, opts bccsp.KeyImportOpts) (bccsp.Key, error) {
@@ -181,12 +243,16 @@ func (ki *x509PublicKeyImportOptsKeyImporter) KeyImport(raw interface{}, opts bc
 		return ki.bccsp.KeyImporters[reflect.TypeOf(&bccsp.ED25519GoPublicKeyImportOpts{})].KeyImport(
 			pk,
 			&bccsp.ED25519GoPublicKeyImportOpts{Temporary: opts.Ephemeral()})
+	case *mldsa.PublicKey:
+		return ki.bccsp.KeyImporters[reflect.TypeOf(&bccsp.MLDSAGoPublicKeyImportOpts{})].KeyImport(
+			pk,
+			&bccsp.MLDSAGoPublicKeyImportOpts{Temporary: opts.Ephemeral()})
 	case *rsa.PublicKey:
 		// This path only exists to support environments that use RSA certificate
 		// authorities to issue ECDSA and ed25519 certificates.
 		return &rsaPublicKey{pubKey: pk}, nil
 	default:
-		return nil, errors.New("Certificate's public key type not recognized. Supported keys: [ECDSA, ED25519, RSA]")
+		return nil, errors.New("Certificate's public key type not recognized. Supported keys: [ECDSA, ED25519, ML-DSA, RSA]")
 	}
 }
 

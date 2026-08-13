@@ -666,6 +666,10 @@ func (msp *bccspmsp) setupV3(conf *m.FabricMSPConfig) error {
 	}
 
 	msp.supportedPublicKeyAlgorithms[x509.Ed25519] = true
+	// ML-DSA (FIPS 204) certificates, issued by a fabric-ca configured with
+	// csr.keyrequest.algo = mldsa. A hybrid certificate keeps a classical
+	// SubjectPublicKeyInfo and is admitted by the ECDSA entry instead.
+	msp.supportedPublicKeyAlgorithms[x509.MLDSA] = true
 
 	err = msp.postSetupV142(conf)
 	if err != nil {

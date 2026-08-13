@@ -25,6 +25,17 @@ const (
 	// ED25519 Algorithm
 	ED25519 = "ED25519"
 
+	// MLDSA ML-DSA (FIPS 204) with the parameter set carried by the key encoding.
+	// Used by the importation options, where the security category comes from the
+	// algorithm OID rather than from the caller.
+	MLDSA = "MLDSA"
+	// MLDSA44 ML-DSA (FIPS 204) at security category 2.
+	MLDSA44 = "MLDSA44"
+	// MLDSA65 ML-DSA (FIPS 204) at security category 3.
+	MLDSA65 = "MLDSA65"
+	// MLDSA87 ML-DSA (FIPS 204) at security category 5.
+	MLDSA87 = "MLDSA87"
+
 	// RSA at the default security level.
 	// Each BCCSP may or may not support default security level. If not supported than
 	// an error will be returned.

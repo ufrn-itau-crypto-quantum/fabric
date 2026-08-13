@@ -63,6 +63,11 @@ func newIdentity(cert *x509.Certificate, pk bccsp.Key, msp *bccspmsp) (Identity,
 		return nil, err
 	}
 
+	// A hybrid certificate must carry a usable post-quantum key, or none at all
+	if err := validateAltPublicKey(cert); err != nil {
+		return nil, err
+	}
+
 	// Compute identity identifier
 
 	// Use the hash of the identity's certificate as id in the IdentityIdentifier
@@ -172,11 +177,10 @@ func (id *identity) Verify(msg []byte, sig []byte) error {
 
 	digestOrMsg := msg
 
-	// Compute Hash if not Ed25519
-	// Ideally this method should be algorithm agnostic
-	// but golang requires the hash for ecdsa and requires
-	// the full message for ed25519
-	if id.cert.PublicKeyAlgorithm != x509.Ed25519 {
+	// Compute the digest unless the algorithm signs the message itself.
+	// Ideally this method should be algorithm agnostic, but golang requires
+	// the hash for ecdsa and the full message for ed25519 and ML-DSA.
+	if !signsFullMessage(id.cert.PublicKeyAlgorithm) {
 		hashOpt, err := id.getHashOpt(id.msp.cryptoConfig.SignatureHashFamily)
 		if err != nil {
 			return errors.WithMessage(err, "failed getting hash function options")
@@ -264,11 +268,10 @@ func (id *signingidentity) Sign(msg []byte) ([]byte, error) {
 
 	digestOrMsg := msg
 
-	// Compute Hash if not Ed25519
-	// Ideally this method should be algorithm agnostic
-	// but golang requires the hash for ecdsa and requires
-	// the full message for ed25519
-	if id.identity.cert.PublicKeyAlgorithm != x509.Ed25519 {
+	// Compute the digest unless the algorithm signs the message itself.
+	// Ideally this method should be algorithm agnostic, but golang requires
+	// the hash for ecdsa and the full message for ed25519 and ML-DSA.
+	if !signsFullMessage(id.identity.cert.PublicKeyAlgorithm) {
 		hashOpt, err := id.getHashOpt(id.msp.cryptoConfig.SignatureHashFamily)
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed getting hash function options")
@@ -285,11 +288,21 @@ func (id *signingidentity) Sign(msg []byte) ([]byte, error) {
 	} else {
 		mspIdentityLogger.Debugf("Sign: plaintext: %X...%X \n", msg[0:16], msg[len(msg)-16:])
 	}
-	if id.identity.cert.PublicKeyAlgorithm != x509.Ed25519 {
+	if !signsFullMessage(id.identity.cert.PublicKeyAlgorithm) {
 		mspIdentityLogger.Debugf("Sign: digest: %X \n", digestOrMsg)
 	}
-	// Sign digest for ECDSA or msg for ED25519
+	// Sign the digest for ECDSA, or the message itself for ED25519 and ML-DSA
 	return id.signer.Sign(rand.Reader, digestOrMsg, nil)
+}
+
+// signsFullMessage reports whether an algorithm signs the message itself rather than a digest
+// of it. Ed25519 and ML-DSA (FIPS 204) both do; ECDSA and RSA sign a digest.
+//
+// Passing a digest to an ML-DSA signer does not fail loudly: it produces a valid signature
+// over the wrong input, which verifies only against another implementation making the same
+// mistake. That is why this is a shared helper rather than a condition repeated inline.
+func signsFullMessage(algo x509.PublicKeyAlgorithm) bool {
+	return algo == x509.Ed25519 || algo == x509.MLDSA
 }
 
 // GetPublicVersion returns the public version of this identity,
