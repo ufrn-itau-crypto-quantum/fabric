@@ -193,7 +193,9 @@ func (id *identity) Verify(msg []byte, sig []byte) error {
 	}
 
 	if mspIdentityLogger.IsEnabledFor(zapcore.DebugLevel) {
-		mspIdentityLogger.Debugf("Verify: signer identity (certificate subject=%s issuer=%s serialnumber=%d)", id.cert.Subject, id.cert.Issuer, id.cert.SerialNumber)
+		mspIdentityLogger.Debugf("Verify: signer identity (certificate subject=%s issuer=%s serialnumber=%d algorithm=%s fullmessage=%t)",
+			id.cert.Subject, id.cert.Issuer, id.cert.SerialNumber,
+			id.cert.PublicKeyAlgorithm, signsFullMessage(id.cert.PublicKeyAlgorithm))
 		// mspIdentityLogger.Debugf("Verify: digest = %s", hex.Dump(digest))
 		// mspIdentityLogger.Debugf("Verify: sig = %s", hex.Dump(sig))
 	}
@@ -290,6 +292,9 @@ func (id *signingidentity) Sign(msg []byte) ([]byte, error) {
 	}
 	if !signsFullMessage(id.identity.cert.PublicKeyAlgorithm) {
 		mspIdentityLogger.Debugf("Sign: digest: %X \n", digestOrMsg)
+	} else {
+		mspIdentityLogger.Debugf("Sign: %s signs the full message (%d bytes), no digest computed",
+			id.identity.cert.PublicKeyAlgorithm, len(msg))
 	}
 	// Sign the digest for ECDSA, or the message itself for ED25519 and ML-DSA
 	return id.signer.Sign(rand.Reader, digestOrMsg, nil)
@@ -299,8 +304,7 @@ func (id *signingidentity) Sign(msg []byte) ([]byte, error) {
 // of it. Ed25519 and ML-DSA (FIPS 204) both do; ECDSA and RSA sign a digest.
 //
 // Passing a digest to an ML-DSA signer does not fail loudly: it produces a valid signature
-// over the wrong input, which verifies only against another implementation making the same
-// mistake. That is why this is a shared helper rather than a condition repeated inline.
+// over the wrong input, which only another implementation making the same mistake accepts.
 func signsFullMessage(algo x509.PublicKeyAlgorithm) bool {
 	return algo == x509.Ed25519 || algo == x509.MLDSA
 }

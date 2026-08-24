@@ -15,17 +15,13 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Support for hybrid certificates issued by fabric-ca with
-// csr.keyrequest.algo = mldsa-hybrid: the SubjectPublicKeyInfo stays classical, so chain
-// validation, TLS and the algorithm gate keep working unchanged, and the ML-DSA public key
-// travels in the non-critical altSubjectPublicKeyInfo extension.
+// Support for hybrid certificates issued by fabric-ca with csr.keyrequest.algo =
+// mldsa-hybrid: the SubjectPublicKeyInfo stays classical and the ML-DSA public key travels in
+// the non-critical altSubjectPublicKeyInfo extension.
 //
-// The MSP still anchors the identity on the classical key, which is the one the certificate
-// is signed with and the one the BCCSP finds the private key for. What it does here is refuse
-// a certificate whose alternative key is malformed, so an identity never carries a
-// post-quantum key that nothing can verify against. Making ML-DSA the authenticating factor
-// is a separate change: it requires the signing side to use the key in the extension rather
-// than the one in the SubjectPublicKeyInfo.
+// The MSP still anchors the identity on the classical key; what it does here is refuse a
+// certificate whose alternative key is malformed. Making ML-DSA the authenticating factor
+// would additionally require the signing side to use the key in the extension.
 
 // oidAltSubjectPublicKeyInfo is the X.509v3 extension carrying an alternative public key.
 // ITU-T X.509 (2019), clause 9.8. It must match util.OIDAltSubjectPublicKeyInfo in fabric-ca.
