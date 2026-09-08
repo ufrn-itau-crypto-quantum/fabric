@@ -8,10 +8,9 @@ package bccsp
 
 // ML-DSA (FIPS 204) options.
 //
-// Key generation needs one option per parameter set, because the security category is a
-// choice made at generation time. Importation needs only one option per encoding: the
-// parameter set is carried by the algorithm OID inside PKCS#8 and SPKI, so the parsed key
-// already knows which one it is.
+// Key generation has one option per parameter set, since the security category is chosen at
+// generation time. Importation has one option per encoding: the parameter set comes from the
+// algorithm OID inside PKCS#8 and SPKI.
 
 // MLDSA44KeyGenOpts contains options for ML-DSA-44 key generation.
 type MLDSA44KeyGenOpts struct {

@@ -31,9 +31,8 @@ func (k *mldsaPrivateKey) Bytes() ([]byte, error) {
 
 // SKI returns the subject key identifier of this key.
 //
-// It hashes the public key, not the private one, so that a private key and its public key
-// share the same SKI. The keystore relies on that to find a private key starting from the
-// public key found in a certificate.
+// It hashes the public key, so that a private key and its public key share the same SKI: the
+// keystore relies on that to find a private key from the public key in a certificate.
 func (k *mldsaPrivateKey) SKI() []byte {
 	if k.privKey == nil {
 		return nil

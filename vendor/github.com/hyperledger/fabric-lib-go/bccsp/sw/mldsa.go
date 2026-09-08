@@ -12,15 +12,12 @@ import (
 	"github.com/hyperledger/fabric-lib-go/bccsp"
 )
 
-// mldsaOptions maps a BCCSP SignerOpts onto the options crypto/mldsa expects.
+// mldsaOptions maps a BCCSP SignerOpts onto the options crypto/mldsa expects. An
+// *mldsa.Options is passed through untouched, so a caller can supply a context string.
 //
-// ML-DSA signs the message itself rather than a digest, so mldsa.PrivateKey.Sign rejects any
-// SignerOpts whose HashFunc is not zero. BCCSP callers routinely pass a hash option such as
-// &bccsp.SHA256Opts{}, which would otherwise make every signature fail. Those are mapped to
-// pure ML-DSA, matching how the Signer contract in bccsp/signer already treats Ed25519.
-//
-// An *mldsa.Options is passed through untouched, so callers that need a context string can
-// supply one.
+// A hash option such as &bccsp.SHA256Opts{} is mapped to pure ML-DSA: mldsa.PrivateKey.Sign
+// rejects any SignerOpts whose HashFunc is not zero, which would otherwise fail every
+// signature from a BCCSP caller.
 func mldsaOptions(opts bccsp.SignerOpts) *mldsa.Options {
 	if mlopts, ok := opts.(*mldsa.Options); ok {
 		return mlopts
