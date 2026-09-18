@@ -95,6 +95,9 @@ func (msp *bccspmsp) validateTLSCAIdentity(cert *x509.Certificate, opts *x509.Ve
 }
 
 func (msp *bccspmsp) validateIdentityAgainstChain(id *identity, validationChain []*x509.Certificate) error {
+	if err := validateAlternativeChain(validationChain); err != nil {
+		return err
+	}
 	return msp.validateCertAgainstChain(id.cert, validationChain)
 }
 
