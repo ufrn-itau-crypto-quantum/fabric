@@ -10,6 +10,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
@@ -39,6 +40,19 @@ func (kg *ed25519KeyGenerator) KeyGen(opts bccsp.KeyGenOpts) (bccsp.Key, error) 
 	}
 
 	return &ed25519PrivateKey{&privKey}, nil
+}
+
+type mldsaKeyGenerator struct {
+	params mldsa.Parameters
+}
+
+func (kg *mldsaKeyGenerator) KeyGen(opts bccsp.KeyGenOpts) (bccsp.Key, error) {
+	privKey, err := mldsa.GenerateKey(kg.params)
+	if err != nil {
+		return nil, fmt.Errorf("Failed generating %s key: [%s]", kg.params, err)
+	}
+
+	return &mldsaPrivateKey{privKey}, nil
 }
 
 type aesKeyGenerator struct {
