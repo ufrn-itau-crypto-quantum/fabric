@@ -16,8 +16,11 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
+	"fmt"
 	"math/big"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -347,6 +350,85 @@ func TestCompositeMixedChain(t *testing.T) {
 	sig, err := id.Sign(msg)
 	require.NoError(t, err)
 	assert.NoError(t, id.Verify(msg, sig))
+}
+
+// TestCompositeIntermediateCA cobre raiz e intermediária composite, com as identidades emitidas pela
+// intermediária. Uma identidade emitida direto pela raiz é recusada.
+func TestCompositeIntermediateCA(t *testing.T) {
+	rootKey := newCompositeKey(t, 65)
+	root := issueCompositeTestCert(t, compositeCATemplate("composite-root"), nil, rootKey.PublicKey(), rootKey)
+	interKey := newCompositeKey(t, 65)
+	inter := issueCompositeTestCert(t, compositeCATemplate("composite-intermediate"), root, interKey.PublicKey(), rootKey)
+	signerKey := newCompositeKey(t, 44)
+	leaf := issueCompositeTestCert(t, compositeLeafTemplate("composite-identity"), inter, signerKey.PublicKey(), interKey)
+
+	thisMSP := getLocalMSPWithVersion(t, writeCompositeMSPDir(t, root, []*x509.Certificate{inter}, leaf, signerKey), MSPv3_0)
+	id, err := thisMSP.GetDefaultSigningIdentity()
+	require.NoError(t, err)
+	require.NoError(t, thisMSP.Validate(id.GetPublicVersion()))
+
+	chain, err := thisMSP.(*bccspmsp).getCertificationChain(id.GetPublicVersion())
+	require.NoError(t, err)
+	require.Len(t, chain, 3)
+	assert.True(t, chain[1].Equal(inter))
+	assert.True(t, chain[2].Equal(root))
+
+	msg := []byte("a message signed by an identity of a composite intermediate CA")
+	sig, err := id.Sign(msg)
+	require.NoError(t, err)
+	assert.NoError(t, id.Verify(msg, sig))
+	assert.NoError(t, composite.Verify(signerKey.PublicKey(), msg, sig, nil))
+
+	fromRoot := issueCompositeTestCert(t, compositeLeafTemplate("issued-by-root"), root, newCompositeKey(t, 44).PublicKey(), rootKey)
+	serialized, err := proto.Marshal(&m.SerializedIdentity{
+		Mspid:   "SampleOrg",
+		IdBytes: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: fromRoot.Raw}),
+	})
+	require.NoError(t, err)
+	rootIssued, err := thisMSP.DeserializeIdentity(serialized)
+	require.NoError(t, err)
+	require.ErrorContains(t, thisMSP.Validate(rootIssued), "should be a leaf of the certification tree")
+}
+
+// TestCompositeIntermediateNodeOUs cobre o NodeOUs apontando para a intermediária composite.
+func TestCompositeIntermediateNodeOUs(t *testing.T) {
+	rootKey := newCompositeKey(t, 65)
+	root := issueCompositeTestCert(t, compositeCATemplate("composite-root"), nil, rootKey.PublicKey(), rootKey)
+	interKey := newCompositeKey(t, 65)
+	inter := issueCompositeTestCert(t, compositeCATemplate("composite-intermediate"), root, interKey.PublicKey(), rootKey)
+	signerKey := newCompositeKey(t, 65)
+	tpl := compositeLeafTemplate("composite-client")
+	tpl.Subject.OrganizationalUnit = []string{"client"}
+	leaf := issueCompositeTestCert(t, tpl, inter, signerKey.PublicKey(), interKey)
+
+	dir := writeCompositeMSPDir(t, root, []*x509.Certificate{inter}, leaf, signerKey)
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "admincerts")))
+	nodeOUs := "NodeOUs:\n  Enable: true\n"
+	for _, role := range []string{"Client", "Peer", "Admin", "Orderer"} {
+		nodeOUs += fmt.Sprintf("  %sOUIdentifier:\n    Certificate: intermediatecerts/0.pem\n    OrganizationalUnitIdentifier: %s\n",
+			role, strings.ToLower(role))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(nodeOUs), 0o600))
+
+	thisMSP := getLocalMSPWithVersion(t, dir, MSPv3_0)
+	id, err := thisMSP.GetDefaultSigningIdentity()
+	require.NoError(t, err)
+	require.NoError(t, thisMSP.Validate(id.GetPublicVersion()))
+	require.NoError(t, thisMSP.SatisfiesPrincipal(id.GetPublicVersion(), &m.MSPPrincipal{
+		PrincipalClassification: m.MSPPrincipal_ROLE,
+		Principal:               mustMarshal(t, &m.MSPRole{MspIdentifier: "SampleOrg", Role: m.MSPRole_CLIENT}),
+	}))
+	require.Error(t, thisMSP.SatisfiesPrincipal(id.GetPublicVersion(), &m.MSPPrincipal{
+		PrincipalClassification: m.MSPPrincipal_ROLE,
+		Principal:               mustMarshal(t, &m.MSPRole{MspIdentifier: "SampleOrg", Role: m.MSPRole_PEER}),
+	}))
+}
+
+func mustMarshal(t *testing.T, msg proto.Message) []byte {
+	t.Helper()
+	raw, err := proto.Marshal(msg)
+	require.NoError(t, err)
+	return raw
 }
 
 // TestCompositeIdentityFromOtherCA fixa que uma identidade composite de outra CA é recusada
