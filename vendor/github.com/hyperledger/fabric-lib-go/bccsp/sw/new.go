@@ -64,6 +64,7 @@ func NewWithParams(securityLevel int, hashFamily string, keyStore bccsp.KeyStore
 	swbccsp.AddWrapper(reflect.TypeOf(&ecdsaPrivateKey{}), &ecdsaSigner{})
 	swbccsp.AddWrapper(reflect.TypeOf(&ed25519PrivateKey{}), &ed25519Signer{})
 	swbccsp.AddWrapper(reflect.TypeOf(&mldsaPrivateKey{}), &mldsaSigner{})
+	swbccsp.AddWrapper(reflect.TypeOf(&compositePrivateKey{}), &compositeSigner{})
 	swbccsp.AddWrapper(reflect.TypeOf(&rsaPrivateKey{}), &rsaSigner{})
 
 	// Set the Verifiers
@@ -73,6 +74,8 @@ func NewWithParams(securityLevel int, hashFamily string, keyStore bccsp.KeyStore
 	swbccsp.AddWrapper(reflect.TypeOf(&ed25519PublicKey{}), &ed25519PublicKeyKeyVerifier{})
 	swbccsp.AddWrapper(reflect.TypeOf(&mldsaPrivateKey{}), &mldsaPrivateKeyVerifier{})
 	swbccsp.AddWrapper(reflect.TypeOf(&mldsaPublicKey{}), &mldsaPublicKeyKeyVerifier{})
+	swbccsp.AddWrapper(reflect.TypeOf(&compositePrivateKey{}), &compositePrivateKeyVerifier{})
+	swbccsp.AddWrapper(reflect.TypeOf(&compositePublicKey{}), &compositePublicKeyVerifier{})
 	swbccsp.AddWrapper(reflect.TypeOf(&rsaPrivateKey{}), &rsaPrivateKeyVerifier{})
 	swbccsp.AddWrapper(reflect.TypeOf(&rsaPublicKey{}), &rsaPublicKeyKeyVerifier{})
 
@@ -99,6 +102,7 @@ func NewWithParams(securityLevel int, hashFamily string, keyStore bccsp.KeyStore
 	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.MLDSA44KeyGenOpts{}), &mldsaKeyGenerator{params: mldsa.MLDSA44()})
 	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.MLDSA65KeyGenOpts{}), &mldsaKeyGenerator{params: mldsa.MLDSA65()})
 	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.MLDSA87KeyGenOpts{}), &mldsaKeyGenerator{params: mldsa.MLDSA87()})
+	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.CompositeKeyGenOpts{}), &compositeKeyGenerator{})
 	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.RSAKeyGenOpts{}), &rsaKeyGenerator{length: conf.rsaBitLength})
 	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.RSA1024KeyGenOpts{}), &rsaKeyGenerator{length: 1024})
 	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.RSA2048KeyGenOpts{}), &rsaKeyGenerator{length: 2048})
@@ -125,6 +129,9 @@ func NewWithParams(securityLevel int, hashFamily string, keyStore bccsp.KeyStore
 	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.MLDSAPrivateKeyImportOpts{}), &mldsaPrivateKeyImportOptsKeyImporter{})
 	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.MLDSAPKIXPublicKeyImportOpts{}), &mldsaPKIXPublicKeyImportOptsKeyImporter{})
 	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.MLDSAGoPublicKeyImportOpts{}), &mldsaGoPublicKeyImportOptsKeyImporter{})
+	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.CompositePrivateKeyImportOpts{}), &compositePrivateKeyImportOptsKeyImporter{})
+	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.CompositePKIXPublicKeyImportOpts{}), &compositePKIXPublicKeyImportOptsKeyImporter{})
+	swbccsp.AddWrapper(reflect.TypeOf(&bccsp.CompositeGoPublicKeyImportOpts{}), &compositeGoPublicKeyImportOptsKeyImporter{})
 
 	return swbccsp, nil
 }

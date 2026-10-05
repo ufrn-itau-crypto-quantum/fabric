@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/hyperledger/fabric-lib-go/bccsp"
+	"github.com/hyperledger/fabric-lib-go/bccsp/composite"
 	"github.com/hyperledger/fabric-lib-go/common/flogging"
 	"github.com/hyperledger/fabric-protos-go-apiv2/msp"
 	"github.com/pkg/errors"
@@ -180,7 +181,7 @@ func (id *identity) Verify(msg []byte, sig []byte) error {
 	// Compute the digest unless the algorithm signs the message itself.
 	// Ideally this method should be algorithm agnostic, but golang requires
 	// the hash for ecdsa and the full message for ed25519 and ML-DSA.
-	if !signsFullMessage(id.cert.PublicKeyAlgorithm) {
+	if !signsFullMessage(id.cert) {
 		hashOpt, err := id.getHashOpt(id.msp.cryptoConfig.SignatureHashFamily)
 		if err != nil {
 			return errors.WithMessage(err, "failed getting hash function options")
@@ -195,7 +196,7 @@ func (id *identity) Verify(msg []byte, sig []byte) error {
 	if mspIdentityLogger.IsEnabledFor(zapcore.DebugLevel) {
 		mspIdentityLogger.Debugf("Verify: signer identity (certificate subject=%s issuer=%s serialnumber=%d algorithm=%s fullmessage=%t)",
 			id.cert.Subject, id.cert.Issuer, id.cert.SerialNumber,
-			id.cert.PublicKeyAlgorithm, signsFullMessage(id.cert.PublicKeyAlgorithm))
+			id.cert.PublicKeyAlgorithm, signsFullMessage(id.cert))
 		// mspIdentityLogger.Debugf("Verify: digest = %s", hex.Dump(digest))
 		// mspIdentityLogger.Debugf("Verify: sig = %s", hex.Dump(sig))
 	}
@@ -273,7 +274,7 @@ func (id *signingidentity) Sign(msg []byte) ([]byte, error) {
 	// Compute the digest unless the algorithm signs the message itself.
 	// Ideally this method should be algorithm agnostic, but golang requires
 	// the hash for ecdsa and the full message for ed25519 and ML-DSA.
-	if !signsFullMessage(id.identity.cert.PublicKeyAlgorithm) {
+	if !signsFullMessage(id.identity.cert) {
 		hashOpt, err := id.getHashOpt(id.msp.cryptoConfig.SignatureHashFamily)
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed getting hash function options")
@@ -290,7 +291,7 @@ func (id *signingidentity) Sign(msg []byte) ([]byte, error) {
 	} else {
 		mspIdentityLogger.Debugf("Sign: plaintext: %X...%X \n", msg[0:16], msg[len(msg)-16:])
 	}
-	if !signsFullMessage(id.identity.cert.PublicKeyAlgorithm) {
+	if !signsFullMessage(id.identity.cert) {
 		mspIdentityLogger.Debugf("Sign: digest: %X \n", digestOrMsg)
 	} else {
 		mspIdentityLogger.Debugf("Sign: %s signs the full message (%d bytes), no digest computed",
@@ -305,8 +306,11 @@ func (id *signingidentity) Sign(msg []byte) ([]byte, error) {
 //
 // Passing a digest to an ML-DSA signer does not fail loudly: it produces a valid signature
 // over the wrong input, which only another implementation making the same mistake accepts.
-func signsFullMessage(algo x509.PublicKeyAlgorithm) bool {
-	return algo == x509.Ed25519 || algo == x509.MLDSA
+//
+// A Composite ML-DSA também assina a mensagem inteira e é reconhecida pelo OID do SPKI.
+func signsFullMessage(cert *x509.Certificate) bool {
+	return cert.PublicKeyAlgorithm == x509.Ed25519 || cert.PublicKeyAlgorithm == x509.MLDSA ||
+		composite.IsPKIXPublicKey(cert.RawSubjectPublicKeyInfo)
 }
 
 // GetPublicVersion returns the public version of this identity,

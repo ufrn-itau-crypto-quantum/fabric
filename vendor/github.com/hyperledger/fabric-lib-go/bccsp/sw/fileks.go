@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/hyperledger/fabric-lib-go/bccsp"
+	"github.com/hyperledger/fabric-lib-go/bccsp/composite"
 )
 
 // NewFileBasedKeyStore instantiated a file-based key store at a given position.
@@ -148,6 +149,8 @@ func (ks *fileBasedKeyStore) GetKey(ski []byte) (bccsp.Key, error) {
 			return &ed25519PrivateKey{&k}, nil
 		case *mldsa.PrivateKey:
 			return &mldsaPrivateKey{k}, nil
+		case *composite.PrivateKey:
+			return &compositePrivateKey{k}, nil
 		case *rsa.PrivateKey:
 			return &rsaPrivateKey{k}, nil
 		default:
@@ -167,6 +170,8 @@ func (ks *fileBasedKeyStore) GetKey(ski []byte) (bccsp.Key, error) {
 			return &ed25519PublicKey{&k}, nil
 		case *mldsa.PublicKey:
 			return &mldsaPublicKey{k}, nil
+		case *composite.PublicKey:
+			return &compositePublicKey{k}, nil
 		case *rsa.PublicKey:
 			return &rsaPublicKey{k}, nil
 		default:
@@ -222,6 +227,18 @@ func (ks *fileBasedKeyStore) StoreKey(k bccsp.Key) (err error) {
 		err = ks.storePublicKey(hex.EncodeToString(k.SKI()), kk.pubKey)
 		if err != nil {
 			return fmt.Errorf("failed storing ML-DSA public key [%s]", err)
+		}
+
+	case *compositePrivateKey:
+		err = ks.storePrivateKey(hex.EncodeToString(k.SKI()), kk.privKey)
+		if err != nil {
+			return fmt.Errorf("failed storing Composite ML-DSA private key [%s]", err)
+		}
+
+	case *compositePublicKey:
+		err = ks.storePublicKey(hex.EncodeToString(k.SKI()), kk.pubKey)
+		if err != nil {
+			return fmt.Errorf("failed storing Composite ML-DSA public key [%s]", err)
 		}
 
 	case *rsaPrivateKey:
@@ -284,6 +301,8 @@ func (ks *fileBasedKeyStore) searchKeystoreForSKI(ski []byte) (k bccsp.Key, err 
 			k = &ed25519PrivateKey{&kk}
 		case *mldsa.PrivateKey:
 			k = &mldsaPrivateKey{kk}
+		case *composite.PrivateKey:
+			k = &compositePrivateKey{kk}
 		case *rsa.PrivateKey:
 			k = &rsaPrivateKey{kk}
 		default:
