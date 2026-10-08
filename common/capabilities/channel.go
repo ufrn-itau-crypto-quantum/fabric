@@ -31,6 +31,12 @@ const (
 
 	// ChannelV3_0 is the capabilities string for standard new non-backwards compatible fabric v3.0 channel capabilities.
 	ChannelV3_0 = "V3_0"
+
+	// ChannelV3_0Hybrid is the capabilities string for the v3.0 channel capabilities plus hybrid
+	// signatures: an identity whose certificate carries an ML-DSA key in the
+	// altSubjectPublicKeyInfo extension signs and is verified with that key instead of the
+	// classical one. It implies ChannelV3_0.
+	ChannelV3_0Hybrid = "V3_0_HYBRID"
 )
 
 // ChannelProvider provides capabilities information for channel level config.
@@ -42,6 +48,7 @@ type ChannelProvider struct {
 	v143 bool
 	v20  bool
 	v30  bool
+	v30h bool
 }
 
 // NewChannelProvider creates a channel capabilities provider.
@@ -54,6 +61,8 @@ func NewChannelProvider(capabilities map[string]*cb.Capability) *ChannelProvider
 	_, cp.v143 = capabilities[ChannelV1_4_3]
 	_, cp.v20 = capabilities[ChannelV2_0]
 	_, cp.v30 = capabilities[ChannelV3_0]
+	_, cp.v30h = capabilities[ChannelV3_0Hybrid]
+	cp.v30 = cp.v30 || cp.v30h
 	return cp
 }
 
@@ -66,6 +75,8 @@ func (cp *ChannelProvider) Type() string {
 func (cp *ChannelProvider) HasCapability(capability string) bool {
 	switch capability {
 	// Add new capability names here
+	case ChannelV3_0Hybrid:
+		return true
 	case ChannelV3_0:
 		return true
 	case ChannelV2_0:
@@ -86,6 +97,8 @@ func (cp *ChannelProvider) HasCapability(capability string) bool {
 // MSPVersion returns the level of MSP support required by this channel.
 func (cp *ChannelProvider) MSPVersion() msp.MSPVersion {
 	switch {
+	case cp.v30h:
+		return msp.MSPv3_0Hybrid
 	case cp.v30:
 		return msp.MSPv3_0
 	case cp.v143 || cp.v20:

@@ -678,6 +678,13 @@ func (msp *bccspmsp) setupV3(conf *m.FabricMSPConfig) error {
 	return nil
 }
 
+func (msp *bccspmsp) setupV3Hybrid(conf *m.FabricMSPConfig) error {
+	// Set before setupV3, which creates the signing identity and the CA identities
+	msp.hybridSignatures = true
+
+	return msp.setupV3(conf)
+}
+
 func (msp *bccspmsp) postSetupV11(conf *m.FabricMSPConfig) error {
 	// Check for OU enforcement
 	if !msp.ouEnforcement {

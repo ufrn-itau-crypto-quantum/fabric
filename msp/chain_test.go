@@ -34,6 +34,7 @@ type chainTestPKI struct {
 	intermediateB         *x509.Certificate
 	leafA, leafB          *x509.Certificate
 	leafAKey              crypto.Signer
+	leafAAltKey           *mldsa.PrivateKey
 	strippedLeafAIfHybrid *x509.Certificate
 }
 
@@ -57,7 +58,17 @@ func TestMSPWithSharedRootAndIntermediate(t *testing.T) {
 			require.NoError(t, err)
 			writePEM(t, filepath.Join(dir, "keystore", "key.pem"), "PRIVATE KEY", keyDER)
 
-			thisMSP := getLocalMSPWithVersion(t, dir, MSPv3_0)
+			// A hybrid root requires hybrid signatures, and the identity then signs with the
+			// alternative key, which has to be in the keystore too.
+			version := MSPVersion(MSPv3_0)
+			if pki.leafAAltKey != nil {
+				version = MSPv3_0Hybrid
+				altDER, err := x509.MarshalPKCS8PrivateKey(pki.leafAAltKey)
+				require.NoError(t, err)
+				writePEM(t, filepath.Join(dir, "keystore", "altkey.pem"), "PRIVATE KEY", altDER)
+			}
+
+			thisMSP := getLocalMSPWithVersion(t, dir, version)
 
 			own, err := thisMSP.DeserializeIdentity(serializeForChainTest(pki.leafA))
 			require.NoError(t, err)
@@ -83,8 +94,8 @@ func newHybridChainPKI(t *testing.T) chainTestPKI {
 	intermediateA := newAltIntermediate(t, root)
 	intermediateB := newAltIntermediate(t, root)
 
-	leafA, leafAKey := issueHybridLeaf(t, intermediateA, "peer0.bankA")
-	leafB, _ := issueHybridLeaf(t, intermediateB, "peer0.bankB")
+	leafA, leafAKey, leafAAltKey := issueHybridLeaf(t, intermediateA, "peer0.bankA")
+	leafB, _, _ := issueHybridLeaf(t, intermediateB, "peer0.bankB")
 
 	// Conventionally signed by the right intermediate, but without the alternative signature
 	// extensions: exactly what an attacker holding only a broken classical key would present.
@@ -106,11 +117,12 @@ func newHybridChainPKI(t *testing.T) chainTestPKI {
 		leafA:                 leafA,
 		leafB:                 leafB,
 		leafAKey:              leafAKey,
+		leafAAltKey:           leafAAltKey,
 		strippedLeafAIfHybrid: stripped,
 	}
 }
 
-func issueHybridLeaf(t *testing.T, issuer *altTestCA, commonName string) (*x509.Certificate, crypto.Signer) {
+func issueHybridLeaf(t *testing.T, issuer *altTestCA, commonName string) (*x509.Certificate, crypto.Signer, *mldsa.PrivateKey) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -124,7 +136,7 @@ func issueHybridLeaf(t *testing.T, issuer *altTestCA, commonName string) (*x509.
 		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 	}, key.Public(), issuer)
-	return cert, key
+	return cert, key, alt
 }
 
 func newPureMLDSAChainPKI(t *testing.T) chainTestPKI {

@@ -12,6 +12,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 
+	"github.com/hyperledger/fabric-lib-go/bccsp"
 	"github.com/pkg/errors"
 )
 
@@ -19,9 +20,8 @@ import (
 // mldsa-hybrid: the SubjectPublicKeyInfo stays classical and the ML-DSA public key travels in
 // the non-critical altSubjectPublicKeyInfo extension.
 //
-// The MSP still anchors the identity on the classical key; what it does here is refuse a
-// certificate whose alternative key is malformed. Making ML-DSA the authenticating factor
-// would additionally require the signing side to use the key in the extension.
+// The MSP refuses a certificate whose alternative key is malformed. Under hybrid signatures
+// (MSPv3_0Hybrid) the alternative key is also the one the identity signs and is verified with.
 
 // oidAltSubjectPublicKeyInfo is the X.509v3 extension carrying an alternative public key.
 // ITU-T X.509 (2019), clause 9.8. It must match util.OIDAltSubjectPublicKeyInfo in fabric-ca.
@@ -72,4 +72,19 @@ func validateAltPublicKey(cert *x509.Certificate) error {
 	}
 	mspIdentityLogger.Debugf("Identity carries an %s alternative public key", pub.Parameters())
 	return nil
+}
+
+// altPublicKeyBCCSP returns the alternative public key of a certificate imported into the
+// BCCSP, ready to verify signatures and to look up the matching private key by its SKI.
+// found is false, with no error, when the extension is absent.
+func altPublicKeyBCCSP(cert *x509.Certificate, csp bccsp.BCCSP) (key bccsp.Key, found bool, err error) {
+	pub, found, err := altPublicKeyFromCert(cert)
+	if err != nil || !found {
+		return nil, found, err
+	}
+	key, err = csp.KeyImport(pub, &bccsp.MLDSAGoPublicKeyImportOpts{Temporary: true})
+	if err != nil {
+		return nil, true, errors.WithMessage(err, "failed importing the alternative public key")
+	}
+	return key, true, nil
 }

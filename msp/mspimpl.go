@@ -102,6 +102,10 @@ type bccspmsp struct {
 	// supportedPublicKeyAlgorithms supported by this msp
 	supportedPublicKeyAlgorithms map[x509.PublicKeyAlgorithm]bool
 
+	// hybridSignatures makes identities whose certificate carries an alternative ML-DSA public
+	// key sign and verify with that key instead of the one in the SubjectPublicKeyInfo
+	hybridSignatures bool
+
 	// NodeOUs configuration
 	ouEnforcement bool
 	// These are the OUIdentifiers of the clients, peers, admins and orderers.
@@ -142,6 +146,11 @@ func newBccspMsp(version MSPVersion, defaultBCCSP bccsp.BCCSP) (MSP, error) {
 		theMsp.internalSetupAdmin = theMsp.setupAdminsV142
 	case MSPv3_0:
 		theMsp.internalSetupFunc = theMsp.setupV3
+		theMsp.internalValidateIdentityOusFunc = theMsp.validateIdentityOUsV142
+		theMsp.internalSatisfiesPrincipalInternalFunc = theMsp.satisfiesPrincipalInternalV142
+		theMsp.internalSetupAdmin = theMsp.setupAdminsV142
+	case MSPv3_0Hybrid:
+		theMsp.internalSetupFunc = theMsp.setupV3Hybrid
 		theMsp.internalValidateIdentityOusFunc = theMsp.validateIdentityOUsV142
 		theMsp.internalSatisfiesPrincipalInternalFunc = theMsp.satisfiesPrincipalInternalV142
 		theMsp.internalSetupAdmin = theMsp.setupAdminsV142
@@ -225,6 +234,21 @@ func (msp *bccspmsp) getSigningIdentityFromConf(sidInfo *m.SigningIdentityInfo) 
 		return nil, err
 	}
 
+	// A hybrid identity signs with its alternative key, so the private key to look up is the
+	// ML-DSA one, found by the SKI of the public key in the altSubjectPublicKeyInfo extension
+	sigKey := idPub.(*identity).sigKey
+	if sigKey != pubKey {
+		privKey, err := msp.bccsp.GetKey(sigKey.SKI())
+		if err != nil {
+			return nil, errors.WithMessagef(err, "could not find the ML-DSA private key of the hybrid identity, SKI [%s]", hex.EncodeToString(sigKey.SKI()))
+		}
+		peerSigner, err := signer.New(msp.bccsp, privKey)
+		if err != nil {
+			return nil, errors.WithMessage(err, "getIdentityFromBytes error: Failed initializing bccspCryptoSigner")
+		}
+		return newSigningIdentity(idPub.(*identity).cert, idPub.(*identity).pk, peerSigner, msp)
+	}
+
 	// Find the matching private key in the BCCSP keystore
 	privKey, err := msp.bccsp.GetKey(pubKey.SKI())
 	// Less Secure: Attempt to import Private Key from KeyInfo, if BCCSP was not able to find the key
@@ -273,7 +297,20 @@ func (msp *bccspmsp) Setup(conf1 *m.MSPConfig) error {
 	mspLogger.Debugf("Setting up MSP instance %s", msp.name)
 
 	// setup
-	return msp.internalSetupFunc(conf)
+	if err := msp.internalSetupFunc(conf); err != nil {
+		return err
+	}
+
+	// An MSP rooted at a hybrid CA issues identities that sign with their alternative key, which
+	// only an MSP with hybrid signatures can verify
+	if !msp.hybridSignatures {
+		for _, root := range msp.rootCerts {
+			if _, found, _ := altPublicKeyFromCert(root.(*identity).cert); found {
+				return errors.Errorf("MSP %s is rooted at a hybrid CA, which requires channel capability V3_0_HYBRID", msp.name)
+			}
+		}
+	}
+	return nil
 }
 
 // GetVersion returns the version of this MSP
