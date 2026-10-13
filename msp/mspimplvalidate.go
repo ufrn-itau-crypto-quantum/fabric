@@ -29,7 +29,7 @@ func (msp *bccspmsp) validateIdentity(id *identity) error {
 
 	id.validated = true
 
-	if !msp.supportedPublicKeyAlgorithms[id.cert.PublicKeyAlgorithm] {
+	if !msp.isSupportedPublicKey(id.cert) {
 		err := errors.Errorf("%s is not supported", id.cert.PublicKeyAlgorithm.String())
 		id.validationErr = errors.WithMessage(err, "could not validate identity's public key algorithm")
 		mspLogger.Warnf("Could not validate identity: %s (certificate subject=%s issuer=%s serialnumber=%d) Unsupported public key algorithm: %s", id.validationErr, id.cert.Subject.CommonName, id.cert.Issuer.CommonName, id.cert.SerialNumber, id.cert.PublicKeyAlgorithm)
@@ -128,7 +128,7 @@ func (msp *bccspmsp) validateCertAgainstChain(cert *x509.Certificate, validation
 					// certificate that is under validation. As a
 					// precaution, we verify that said CA is also the
 					// signer of this CRL.
-					err = validationChain[1].CheckCRLSignature(crl)
+					err = msp.checkCRLSignature(validationChain[1], crl)
 					if err != nil {
 						// the CA cert that signed the certificate
 						// that is under validation did not sign the

@@ -120,6 +120,17 @@ func TestChannelV30(t *testing.T) {
 	require.True(t, cp.ConsensusTypeBFT())
 }
 
+func TestChannelV30Hybrid(t *testing.T) {
+	cp := NewChannelProvider(map[string]*cb.Capability{
+		ChannelV3_0Hybrid: {},
+	})
+	require.NoError(t, cp.Supported())
+	require.True(t, cp.MSPVersion() == msp.MSPv3_0Hybrid)
+	require.True(t, cp.ConsensusTypeMigration())
+	require.True(t, cp.OrgSpecificOrdererEndpoints())
+	require.True(t, cp.ConsensusTypeBFT())
+}
+
 func TestChannelNotSupported(t *testing.T) {
 	cp := NewChannelProvider(map[string]*cb.Capability{
 		ChannelV1_1:           {},
