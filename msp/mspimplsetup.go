@@ -116,12 +116,14 @@ func (msp *bccspmsp) setupCAs(conf *m.FabricMSPConfig) error {
 	// CA certificates. After their sanitization is done, the opts
 	// will be recreated using the sanitized certs.
 	msp.opts = &x509.VerifyOptions{Roots: x509.NewCertPool(), Intermediates: x509.NewCertPool()}
+	var roots, intermediates []*x509.Certificate
 	for _, v := range conf.RootCerts {
 		cert, err := msp.getCertFromPem(v)
 		if err != nil {
 			return err
 		}
 		msp.opts.Roots.AddCert(cert)
+		roots = append(roots, cert)
 	}
 	for _, v := range conf.IntermediateCerts {
 		cert, err := msp.getCertFromPem(v)
@@ -129,7 +131,9 @@ func (msp *bccspmsp) setupCAs(conf *m.FabricMSPConfig) error {
 			return err
 		}
 		msp.opts.Intermediates.AddCert(cert)
+		intermediates = append(intermediates, cert)
 	}
+	msp.setCompositeVerifyCerts(roots, intermediates)
 
 	// Load root and intermediate CA identities
 	// Recall that when an identity is created, its certificate gets sanitized
@@ -156,12 +160,16 @@ func (msp *bccspmsp) setupCAs(conf *m.FabricMSPConfig) error {
 
 	// root CA and intermediate CA certificates are sanitized, they can be re-imported
 	msp.opts = &x509.VerifyOptions{Roots: x509.NewCertPool(), Intermediates: x509.NewCertPool()}
+	roots, intermediates = nil, nil
 	for _, id := range msp.rootCerts {
 		msp.opts.Roots.AddCert(id.(*identity).cert)
+		roots = append(roots, id.(*identity).cert)
 	}
 	for _, id := range msp.intermediateCerts {
 		msp.opts.Intermediates.AddCert(id.(*identity).cert)
+		intermediates = append(intermediates, id.(*identity).cert)
 	}
+	msp.setCompositeVerifyCerts(roots, intermediates)
 
 	return nil
 }
@@ -660,6 +668,9 @@ func (msp *bccspmsp) setupV142(conf *m.FabricMSPConfig) error {
 }
 
 func (msp *bccspmsp) setupV3(conf *m.FabricMSPConfig) error {
+	// Habilita a composite antes do preSetupV142, que valida as cadeias das CAs.
+	msp.compositeSupported = true
+
 	err := msp.preSetupV142(conf)
 	if err != nil {
 		return err

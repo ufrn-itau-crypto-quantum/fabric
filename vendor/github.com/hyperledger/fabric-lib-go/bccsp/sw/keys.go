@@ -19,6 +19,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+
+	"github.com/hyperledger/fabric-lib-go/bccsp/composite"
 )
 
 type pkcs8Info struct {
@@ -70,6 +72,8 @@ func privateKeyToDER(privateKey crypto.PrivateKey) ([]byte, error) {
 		return x509.MarshalPKCS8PrivateKey(*privateKey.(*ed25519.PrivateKey))
 	case *mldsa.PrivateKey:
 		return x509.MarshalPKCS8PrivateKey(key)
+	case *composite.PrivateKey:
+		return composite.MarshalPKCS8PrivateKey(key)
 	default:
 		return nil, fmt.Errorf("found unknown private key type (%T) in marshaling", key)
 	}
@@ -172,6 +176,21 @@ func privateKeyToPEM(privateKey interface{}, pwd []byte) ([]byte, error) {
 			},
 		), nil
 
+	case *composite.PrivateKey:
+		if k == nil {
+			return nil, errors.New("invalid Composite ML-DSA private key. It must be different from nil")
+		}
+		pkcs8Bytes, err := composite.MarshalPKCS8PrivateKey(k)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling Composite ML-DSA key to asn1: [%s]", err)
+		}
+		return pem.EncodeToMemory(
+			&pem.Block{
+				Type:  "PRIVATE KEY",
+				Bytes: pkcs8Bytes,
+			},
+		), nil
+
 	default:
 		return nil, errors.New("invalid key type. It must be *ecdsa.PrivateKey, *ed25519.PrivateKey, *mldsa.PrivateKey or *rsa.PrivateKey")
 	}
@@ -245,6 +264,27 @@ func privateKeyToEncryptedPEM(privateKey interface{}, pwd []byte) ([]byte, error
 
 		return pem.EncodeToMemory(block), nil
 
+	case *composite.PrivateKey:
+		if k == nil {
+			return nil, errors.New("invalid Composite ML-DSA private key. It must be different from nil")
+		}
+		raw, err := composite.MarshalPKCS8PrivateKey(k)
+		if err != nil {
+			return nil, err
+		}
+
+		block, err := x509.EncryptPEMBlock(
+			rand.Reader,
+			"PRIVATE KEY",
+			raw,
+			pwd,
+			x509.PEMCipherAES256)
+		if err != nil {
+			return nil, err
+		}
+
+		return pem.EncodeToMemory(block), nil
+
 	default:
 		return nil, errors.New("invalid key type. It must be *ecdsa.PrivateKey, *ed25519.PrivateKey or *mldsa.PrivateKey")
 	}
@@ -266,6 +306,10 @@ func derToPrivateKey(der []byte) (key interface{}, err error) {
 		default:
 			return nil, errors.New("found unknown private key type in PKCS#8 wrapping")
 		}
+	}
+
+	if key, err = composite.ParsePKCS8PrivateKey(der); err == nil {
+		return
 	}
 
 	if key, err = x509.ParseECPrivateKey(der); err == nil {
@@ -429,6 +473,22 @@ func publicKeyToPEM(publicKey interface{}, pwd []byte) ([]byte, error) {
 			},
 		), nil
 
+	case *composite.PublicKey:
+		if k == nil {
+			return nil, errors.New("invalid Composite ML-DSA public key. It must be different from nil")
+		}
+		PubASN1, err := composite.MarshalPKIXPublicKey(k)
+		if err != nil {
+			return nil, err
+		}
+
+		return pem.EncodeToMemory(
+			&pem.Block{
+				Type:  "PUBLIC KEY",
+				Bytes: PubASN1,
+			},
+		), nil
+
 	default:
 		return nil, errors.New("invalid key type. It must be *ecdsa.PublicKey, *ed25519.PublicKey, *mldsa.PublicKey or *rsa.PublicKey")
 	}
@@ -496,6 +556,27 @@ func publicKeyToEncryptedPEM(publicKey interface{}, pwd []byte) ([]byte, error) 
 		}
 
 		return pem.EncodeToMemory(block), nil
+	case *composite.PublicKey:
+		if k == nil {
+			return nil, errors.New("invalid Composite ML-DSA public key. It must be different from nil")
+		}
+		raw, err := composite.MarshalPKIXPublicKey(k)
+		if err != nil {
+			return nil, err
+		}
+
+		block, err := x509.EncryptPEMBlock(
+			rand.Reader,
+			"PUBLIC KEY",
+			raw,
+			pwd,
+			x509.PEMCipherAES256)
+		if err != nil {
+			return nil, err
+		}
+
+		return pem.EncodeToMemory(block), nil
+
 	default:
 		return nil, errors.New("invalid key type. It must be *ecdsa.PublicKey, *ed25519.PublicKey or *mldsa.PublicKey")
 	}
@@ -541,6 +622,11 @@ func derToPublicKey(raw []byte) (pub interface{}, err error) {
 	}
 
 	key, err := x509.ParsePKIXPublicKey(raw)
+	if err != nil {
+		if compositeKey, compositeErr := composite.ParsePKIXPublicKey(raw); compositeErr == nil {
+			return compositeKey, nil
+		}
+	}
 
 	return key, err
 }

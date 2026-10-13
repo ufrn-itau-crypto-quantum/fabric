@@ -17,6 +17,7 @@ import (
 	"reflect"
 
 	"github.com/hyperledger/fabric-lib-go/bccsp"
+	"github.com/hyperledger/fabric-lib-go/bccsp/composite"
 )
 
 type aes256ImportKeyOptsKeyImporter struct{}
@@ -230,6 +231,16 @@ func (ki *x509PublicKeyImportOptsKeyImporter) KeyImport(raw interface{}, opts bc
 	x509Cert, ok := raw.(*x509.Certificate)
 	if !ok {
 		return nil, errors.New("Invalid raw material. Expected *x509.Certificate.")
+	}
+
+	if composite.IsPKIXPublicKey(x509Cert.RawSubjectPublicKeyInfo) {
+		compositePub, err := composite.ParsePKIXPublicKey(x509Cert.RawSubjectPublicKeyInfo)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid Composite ML-DSA public key in certificate [%s]", err)
+		}
+		return ki.bccsp.KeyImporters[reflect.TypeOf(&bccsp.CompositeGoPublicKeyImportOpts{})].KeyImport(
+			compositePub,
+			&bccsp.CompositeGoPublicKeyImportOpts{Temporary: opts.Ephemeral()})
 	}
 
 	pk := x509Cert.PublicKey

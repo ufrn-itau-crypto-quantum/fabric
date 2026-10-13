@@ -228,6 +228,7 @@ github.com/hyperledger/fabric-config/protolator/protoext/peerext
 # github.com/hyperledger/fabric-lib-go v1.1.3 => ../fabric-lib-go
 ## explicit; go 1.27
 github.com/hyperledger/fabric-lib-go/bccsp
+github.com/hyperledger/fabric-lib-go/bccsp/composite
 github.com/hyperledger/fabric-lib-go/bccsp/factory
 github.com/hyperledger/fabric-lib-go/bccsp/pkcs11
 github.com/hyperledger/fabric-lib-go/bccsp/signer

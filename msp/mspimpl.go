@@ -106,6 +106,13 @@ type bccspmsp struct {
 	// key sign and verify with that key instead of the one in the SubjectPublicKeyInfo
 	hybridSignatures bool
 
+	// compositeSupported enables Composite ML-DSA from MSP v3 on. The lists are the certificates
+	// of msp.opts, and compositeChain tells whether any of them is composite.
+	compositeSupported     bool
+	compositeChain         bool
+	compositeRoots         []*x509.Certificate
+	compositeIntermediates []*x509.Certificate
+
 	// NodeOUs configuration
 	ouEnforcement bool
 	// These are the OUIdentifiers of the clients, peers, admins and orderers.
@@ -764,7 +771,7 @@ func (msp *bccspmsp) getUniqueValidationChain(cert *x509.Certificate, opts x509.
 	if msp.opts == nil {
 		return nil, errors.New("the supplied identity has no verify options")
 	}
-	validationChains, err := cert.Verify(opts)
+	validationChains, err := msp.verifyChains(cert, opts)
 	if err != nil {
 		return nil, errors.WithMessage(err, "the supplied identity is not valid")
 	}
