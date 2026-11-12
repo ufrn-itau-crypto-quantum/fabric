@@ -14,7 +14,7 @@ import (
 )
 
 // Removes an OSN from an existing channel.
-func Remove(osnURL, channelID string, caCertPool *x509.CertPool, tlsClientCert tls.Certificate) (*http.Response, error) {
+func Remove(osnURL, channelID string, caCerts []*x509.Certificate, tlsClientCert tls.Certificate) (*http.Response, error) {
 	url := fmt.Sprintf("%s/participation/v1/channels/%s", osnURL, channelID)
 
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
@@ -22,5 +22,5 @@ func Remove(osnURL, channelID string, caCertPool *x509.CertPool, tlsClientCert t
 		return nil, err
 	}
 
-	return httpDo(req, caCertPool, tlsClientCert)
+	return httpDo(req, caCerts, tlsClientCert)
 }

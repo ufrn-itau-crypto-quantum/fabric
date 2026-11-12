@@ -1504,12 +1504,12 @@ func (c *Chain) ValidateConsensusMetadata(oldOrdererConfig, newOrdererConfig cha
 		return errors.Wrap(err, "failed to unmarshal new etcdraft metadata configuration")
 	}
 
-	verifyOpts, err := createX509VerifyOptions(newOrdererConfig)
+	verifyOpts, cas, err := createX509VerifyOptions(newOrdererConfig)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create x509 verify options from old and new orderer config")
 	}
 
-	if err := VerifyConfigMetadata(newMetadata, verifyOpts); err != nil {
+	if err := verifyConfigMetadata(newMetadata, verifyOpts, cas); err != nil {
 		return errors.Wrap(err, "invalid new config metadata")
 	}
 
@@ -1537,7 +1537,7 @@ func (c *Chain) ValidateConsensusMetadata(oldOrdererConfig, newOrdererConfig cha
 
 	// new config metadata was verified above. Additionally need to check new consenters for certificates expiration
 	for _, c := range changes.AddedNodes {
-		if err := validateConsenterTLSCerts(c, verifyOpts, false); err != nil {
+		if err := validateConsenterTLSCerts(c, verifyOpts, cas, false); err != nil {
 			return errors.Wrapf(err, "consenter %s:%d has invalid certificates", c.Host, c.Port)
 		}
 	}

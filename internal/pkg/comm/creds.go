@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 	"github.com/hyperledger/fabric-lib-go/common/flogging"
 	"google.golang.org/grpc/credentials"
 )
@@ -57,9 +58,14 @@ type serverCreds struct {
 	logger       *flogging.FabricLogger
 }
 
+// TLSConfig is the server TLS configuration, shared by handshakes and updated in place. clientRoots
+// lists the certificates of config.ClientCAs, and externalRoots is set when one of them needs
+// pkixext to verify client chains.
 type TLSConfig struct {
-	config *tls.Config
-	lock   sync.RWMutex
+	config        *tls.Config
+	lock          sync.RWMutex
+	clientRoots   []*x509.Certificate
+	externalRoots bool
 }
 
 func NewTLSConfig(config *tls.Config) *TLSConfig {
@@ -79,18 +85,56 @@ func (t *TLSConfig) Config() tls.Config {
 	return tls.Config{}
 }
 
+// handshakeConfig returns the configuration of one server handshake: a copy of the configuration
+// in which, when the client roots need pkixext, client certificates are verified by
+// pkixext.ConfigureServerVerification instead of crypto/x509.
+func (t *TLSConfig) handshakeConfig() *tls.Config {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	if t.config == nil {
+		return &tls.Config{}
+	}
+	config := t.config.Clone()
+	if t.externalRoots {
+		pkixext.ConfigureServerVerification(config, t.clientRoots)
+	}
+	return config
+}
+
 func (t *TLSConfig) AddClientRootCA(cert *x509.Certificate) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
 	t.config.ClientCAs.AddCert(cert)
+	t.clientRoots = append(t.clientRoots, cert)
+	t.externalRoots = pkixext.HasExternal(t.clientRoots)
 }
 
+// SetClientCAs replaces the client roots with certPool. Since a pool cannot be listed, client
+// certificates are then verified by crypto/x509 only; SetClientRoots keeps pkixext available.
 func (t *TLSConfig) SetClientCAs(certPool *x509.CertPool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
 	t.config.ClientCAs = certPool
+	t.clientRoots = nil
+	t.externalRoots = false
+}
+
+// SetClientRoots replaces the client roots with certs.
+func (t *TLSConfig) SetClientRoots(certs []*x509.Certificate) {
+	certPool := x509.NewCertPool()
+	for _, cert := range certs {
+		certPool.AddCert(cert)
+	}
+
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	t.config.ClientCAs = certPool
+	t.clientRoots = certs
+	t.externalRoots = pkixext.HasExternal(certs)
 }
 
 // ClientHandshake is not implemented for `serverCreds`.
@@ -100,9 +144,7 @@ func (sc *serverCreds) ClientHandshake(context.Context, string, net.Conn) (net.C
 
 // ServerHandshake does the authentication handshake for servers.
 func (sc *serverCreds) ServerHandshake(rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {
-	serverConfig := sc.serverConfig.Config()
-
-	conn := tls.Server(rawConn, &serverConfig)
+	conn := tls.Server(rawConn, sc.serverConfig.handshakeConfig())
 	l := sc.logger.With("remote address", conn.RemoteAddr().String())
 	start := time.Now()
 	if err := conn.Handshake(); err != nil {
@@ -123,8 +165,12 @@ func (sc *serverCreds) Info() credentials.ProtocolInfo {
 
 // Clone makes a copy of this TransportCredentials.
 func (sc *serverCreds) Clone() credentials.TransportCredentials {
+	sc.serverConfig.lock.RLock()
+	clientRoots, externalRoots := sc.serverConfig.clientRoots, sc.serverConfig.externalRoots
+	sc.serverConfig.lock.RUnlock()
 	config := sc.serverConfig.Config()
 	serverConfig := NewTLSConfig(&config)
+	serverConfig.clientRoots, serverConfig.externalRoots = clientRoots, externalRoots
 	return NewServerTransportCredentials(serverConfig, sc.logger)
 }
 
@@ -134,8 +180,12 @@ func (sc *serverCreds) OverrideServerName(string) error {
 	return ErrOverrideHostnameNotSupported
 }
 
+// DynamicClientCredentials are client credentials over a TLS configuration that may change between
+// connections. When ExternalRoots is set, each connection verifies the server chain against it with
+// pkixext, using the dialed authority as the server name when TLSConfig has none.
 type DynamicClientCredentials struct {
-	TLSConfig *tls.Config
+	TLSConfig     *tls.Config
+	ExternalRoots []*x509.Certificate
 }
 
 func (dtc *DynamicClientCredentials) latestConfig() *tls.Config {
@@ -144,7 +194,11 @@ func (dtc *DynamicClientCredentials) latestConfig() *tls.Config {
 
 func (dtc *DynamicClientCredentials) ClientHandshake(ctx context.Context, authority string, rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {
 	l := tlsClientLogger.With("remote address", rawConn.RemoteAddr().String())
-	creds := credentials.NewTLS(dtc.latestConfig())
+	config := dtc.latestConfig()
+	if dtc.ExternalRoots != nil {
+		config = pkixext.ClientConfigFor(config, dtc.ExternalRoots, authority)
+	}
+	creds := credentials.NewTLS(config)
 	start := time.Now()
 	conn, auth, err := creds.ClientHandshake(ctx, authority, rawConn)
 	if err != nil {
@@ -164,6 +218,9 @@ func (dtc *DynamicClientCredentials) Info() credentials.ProtocolInfo {
 }
 
 func (dtc *DynamicClientCredentials) Clone() credentials.TransportCredentials {
+	if dtc.ExternalRoots != nil {
+		return &DynamicClientCredentials{TLSConfig: dtc.latestConfig(), ExternalRoots: dtc.ExternalRoots}
+	}
 	return credentials.NewTLS(dtc.latestConfig())
 }
 

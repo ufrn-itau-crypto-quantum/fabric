@@ -18,6 +18,7 @@ import (
 
 	"github.com/hyperledger/fabric-lib-go/bccsp"
 	"github.com/hyperledger/fabric-lib-go/bccsp/composite"
+	"github.com/hyperledger/fabric-lib-go/bccsp/slhdsa"
 )
 
 type aes256ImportKeyOptsKeyImporter struct{}
@@ -241,6 +242,16 @@ func (ki *x509PublicKeyImportOptsKeyImporter) KeyImport(raw interface{}, opts bc
 		return ki.bccsp.KeyImporters[reflect.TypeOf(&bccsp.CompositeGoPublicKeyImportOpts{})].KeyImport(
 			compositePub,
 			&bccsp.CompositeGoPublicKeyImportOpts{Temporary: opts.Ephemeral()})
+	}
+
+	if slhdsa.IsPKIXPublicKey(x509Cert.RawSubjectPublicKeyInfo) {
+		slhdsaPub, err := slhdsa.ParsePKIXPublicKey(x509Cert.RawSubjectPublicKeyInfo)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid SLH-DSA public key in certificate [%s]", err)
+		}
+		return ki.bccsp.KeyImporters[reflect.TypeOf(&bccsp.SLHDSAGoPublicKeyImportOpts{})].KeyImport(
+			slhdsaPub,
+			&bccsp.SLHDSAGoPublicKeyImportOpts{Temporary: opts.Ephemeral()})
 	}
 
 	pk := x509Cert.PublicKey

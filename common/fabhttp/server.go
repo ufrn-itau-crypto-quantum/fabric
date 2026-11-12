@@ -99,7 +99,11 @@ func (s *Server) initializeServer() {
 
 func (s *Server) HandlerChain(h http.Handler, secure bool) http.Handler {
 	if secure {
-		return middleware.NewChain(middleware.RequireCert(), middleware.WithRequestID(util.GenerateUUID)).Handler(h)
+		requireCert := middleware.RequireCert()
+		if s.options.TLS.ExternalClientVerification() {
+			requireCert = middleware.RequireHandshakeVerifiedCert()
+		}
+		return middleware.NewChain(requireCert, middleware.WithRequestID(util.GenerateUUID)).Handler(h)
 	}
 	return middleware.NewChain(middleware.WithRequestID(util.GenerateUUID)).Handler(h)
 }

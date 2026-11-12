@@ -15,8 +15,8 @@ import (
 )
 
 // Fetch get block from OSN.
-func Fetch(osnURL, channelID string, blockID string, caCertPool *x509.CertPool, tlsClientCert tls.Certificate, timeShift time.Duration) (*http.Response, error) {
+func Fetch(osnURL, channelID string, blockID string, caCerts []*x509.Certificate, tlsClientCert tls.Certificate, timeShift time.Duration) (*http.Response, error) {
 	url := fmt.Sprintf("%s/participation/v1/channels/%s/blocks/%s", osnURL, channelID, blockID)
 
-	return httpGetTimeShift(url, caCertPool, tlsClientCert, timeShift)
+	return httpGetTimeShift(url, caCerts, tlsClientCert, timeShift)
 }

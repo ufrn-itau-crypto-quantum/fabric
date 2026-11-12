@@ -51,7 +51,9 @@ func (cs *CredentialSupport) GetClientCertificate() tls.Certificate {
 }
 
 // GetPeerCredentials returns gRPC transport credentials for use by gRPC
-// clients which communicate with remote peer endpoints.
+// clients which communicate with remote peer endpoints. When the trusted
+// roots include a certificate that crypto/x509 cannot verify through, the
+// server chain is verified by pkixext instead.
 func (cs *CredentialSupport) GetPeerCredentials() credentials.TransportCredentials {
 	cs.mutex.RLock()
 	defer cs.mutex.RUnlock()
@@ -69,10 +71,14 @@ func (cs *CredentialSupport) GetPeerCredentials() credentials.TransportCredentia
 		}
 	}
 
-	return credentials.NewTLS(&tls.Config{
+	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cs.clientCert},
 		RootCAs:      certPool,
-	})
+	}
+	if roots := externalRoots(appRootCAs); roots != nil {
+		return &DynamicClientCredentials{TLSConfig: tlsConfig, ExternalRoots: roots}
+	}
+	return credentials.NewTLS(tlsConfig)
 }
 
 func (cs *CredentialSupport) AppRootCAsByChain() [][]byte {

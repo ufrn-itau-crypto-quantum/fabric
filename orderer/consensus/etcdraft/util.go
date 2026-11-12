@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hyperledger/fabric-lib-go/bccsp"
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 	"github.com/hyperledger/fabric-lib-go/common/flogging"
 	"github.com/hyperledger/fabric-protos-go-apiv2/common"
 	"github.com/hyperledger/fabric-protos-go-apiv2/orderer"
@@ -204,6 +205,12 @@ func ConsensusMetadataFromConfigBlock(block *common.Block) (*etcdraft.ConfigMeta
 // VerifyConfigMetadata validates Raft config metadata.
 // Note: ignores certificates expiration.
 func VerifyConfigMetadata(metadata *etcdraft.ConfigMetadata, verifyOpts x509.VerifyOptions) error {
+	return verifyConfigMetadata(metadata, verifyOpts, tlsCACerts{})
+}
+
+// verifyConfigMetadata is VerifyConfigMetadata with the TLS CAs of verifyOpts also given as lists,
+// which consenter chains with an algorithm outside crypto/x509 are verified against.
+func verifyConfigMetadata(metadata *etcdraft.ConfigMetadata, verifyOpts x509.VerifyOptions, cas tlsCACerts) error {
 	if metadata == nil {
 		// defensive check. this should not happen as CheckConfigMetadata
 		// should always be called with non-nil config metadata
@@ -243,7 +250,7 @@ func VerifyConfigMetadata(metadata *etcdraft.ConfigMetadata, verifyOpts x509.Ver
 		if consenter == nil {
 			return errors.Errorf("metadata has nil consenter")
 		}
-		if err := validateConsenterTLSCerts(consenter, verifyOpts, true); err != nil {
+		if err := validateConsenterTLSCerts(consenter, verifyOpts, cas, true); err != nil {
 			return errors.WithMessagef(err, "consenter %s:%d has invalid certificate", consenter.Host, consenter.Port)
 		}
 	}
@@ -284,18 +291,24 @@ func parseCertificateListFromBytes(certs [][]byte) ([]*x509.Certificate, error) 
 	return certificateList, nil
 }
 
-func createX509VerifyOptions(ordererConfig channelconfig.Orderer) (x509.VerifyOptions, error) {
+// tlsCACerts lists the certificates of the pools built by createX509VerifyOptions.
+type tlsCACerts struct {
+	roots, intermediates []*x509.Certificate
+}
+
+func createX509VerifyOptions(ordererConfig channelconfig.Orderer) (x509.VerifyOptions, tlsCACerts, error) {
 	tlsRoots := x509.NewCertPool()
 	tlsIntermediates := x509.NewCertPool()
+	var cas tlsCACerts
 
 	for _, org := range ordererConfig.Organizations() {
 		rootCerts, err := parseCertificateListFromBytes(org.MSP().GetTLSRootCerts())
 		if err != nil {
-			return x509.VerifyOptions{}, errors.Wrap(err, "parsing tls root certs")
+			return x509.VerifyOptions{}, tlsCACerts{}, errors.Wrap(err, "parsing tls root certs")
 		}
 		intermediateCerts, err := parseCertificateListFromBytes(org.MSP().GetTLSIntermediateCerts())
 		if err != nil {
-			return x509.VerifyOptions{}, errors.Wrap(err, "parsing tls intermediate certs")
+			return x509.VerifyOptions{}, tlsCACerts{}, errors.Wrap(err, "parsing tls intermediate certs")
 		}
 
 		for _, cert := range rootCerts {
@@ -305,6 +318,8 @@ func createX509VerifyOptions(ordererConfig channelconfig.Orderer) (x509.VerifyOp
 		for _, cert := range intermediateCerts {
 			tlsIntermediates.AddCert(cert)
 		}
+		cas.roots = append(cas.roots, rootCerts...)
+		cas.intermediates = append(cas.intermediates, intermediateCerts...)
 	}
 
 	return x509.VerifyOptions{
@@ -314,11 +329,15 @@ func createX509VerifyOptions(ordererConfig channelconfig.Orderer) (x509.VerifyOp
 			x509.ExtKeyUsageClientAuth,
 			x509.ExtKeyUsageServerAuth,
 		},
-	}, nil
+	}, cas, nil
 }
 
 // validateConsenterTLSCerts decodes PEM cert, parses and validates it.
-func validateConsenterTLSCerts(c *etcdraft.Consenter, opts x509.VerifyOptions, ignoreExpiration bool) error {
+// When the certificate or one of the CAs in cas has an algorithm outside
+// crypto/x509, the chain is verified by pkixext.VerifyChain against cas; an
+// expired certificate is then verified at its NotAfter when ignoreExpiration
+// is set.
+func validateConsenterTLSCerts(c *etcdraft.Consenter, opts x509.VerifyOptions, cas tlsCACerts, ignoreExpiration bool) error {
 	clientCert, err := parseCertificateFromBytes(c.ClientTlsCert)
 	if err != nil {
 		return errors.Wrapf(err, "parsing tls client cert of %s:%d", c.Host, c.Port)
@@ -329,7 +348,18 @@ func validateConsenterTLSCerts(c *etcdraft.Consenter, opts x509.VerifyOptions, i
 		return errors.Wrapf(err, "parsing tls server cert of %s:%d", c.Host, c.Port)
 	}
 
+	external := pkixext.HasExternal(append(slices.Clone(cas.roots), cas.intermediates...))
 	verify := func(certType string, cert *x509.Certificate, opts x509.VerifyOptions) error {
+		if external || pkixext.IsSignedWithExternal(cert) {
+			extOpts := pkixext.VerifyOptions{Roots: cas.roots, Intermediates: cas.intermediates, KeyUsages: opts.KeyUsages}
+			if ignoreExpiration && time.Now().After(cert.NotAfter) {
+				extOpts.CurrentTime = cert.NotAfter
+			}
+			if _, err := pkixext.VerifyChain(cert, extOpts); err != nil {
+				return errors.Wrapf(err, "verifying tls %s cert with serial number %d", certType, cert.SerialNumber)
+			}
+			return nil
+		}
 		if _, err := cert.Verify(opts); err != nil {
 			if validationRes, ok := err.(x509.CertificateInvalidError); !ok || (!ignoreExpiration || validationRes.Reason != x509.Expired) {
 				return errors.Wrapf(err, "verifying tls %s cert with serial number %d", certType, cert.SerialNumber)

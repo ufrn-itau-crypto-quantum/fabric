@@ -18,19 +18,23 @@ import (
 	"encoding/asn1"
 	"io"
 
+	"github.com/hyperledger/fabric-lib-go/bccsp/slhdsa"
 	"github.com/pkg/errors"
 )
 
-// Algorithm descreve um par composite ML-DSA do draft-ietf-lamps-pq-composite-sigs-19.
+// Algorithm describes a composite pair: the ML-DSA pairs of draft-ietf-lamps-pq-composite-sigs-19,
+// and experimental SLH-DSA pairs built the same way.
 type Algorithm struct {
-	OID        asn1.ObjectIdentifier
-	Label      string
+	OID   asn1.ObjectIdentifier
+	Label string
+	// MLDSALevel is 44, 65 or 87 for an ML-DSA pair and 0 for any other.
 	MLDSALevel int
-	// Hash é o PH que resume a mensagem dentro do M'.
+	PQ         PQComponent
+	// Hash is the PH that digests the message inside M'.
 	Hash     crypto.Hash
 	Curve    elliptic.Curve
 	CurveOID asn1.ObjectIdentifier
-	// TraditionalHash é o hash que o ECDSA aplica ao M'. Nos pares P-384, ele é diferente de Hash.
+	// TraditionalHash is the hash ECDSA applies to M'. In the P-384 pairs it differs from Hash.
 	TraditionalHash crypto.Hash
 }
 
@@ -39,15 +43,32 @@ var (
 	OIDMLDSA65ECDSAP384SHA512 = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 6, 46}
 	OIDMLDSA87ECDSAP384SHA512 = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 6, 49}
 
+	OIDSLHDSASHA2128sECDSAP256SHA256 = oidExperimental(1)
+	OIDSLHDSASHA2128fECDSAP256SHA256 = oidExperimental(2)
+	OIDSLHDSASHA2192sECDSAP384SHA512 = oidExperimental(3)
+	OIDSLHDSASHA2192fECDSAP384SHA512 = oidExperimental(4)
+	OIDSLHDSASHA2256sECDSAP384SHA512 = oidExperimental(5)
+	OIDSLHDSASHA2256fECDSAP384SHA512 = oidExperimental(6)
+
 	oidCurveP256 = asn1.ObjectIdentifier{1, 2, 840, 10045, 3, 1, 7}
 	oidCurveP384 = asn1.ObjectIdentifier{1, 3, 132, 0, 34}
 )
+
+// oidExperimentalArc is 1.3.6.1.4.1.32473, the enterprise number RFC 5612 reserves for
+// documentation and examples, followed by 1 for the composite SLH-DSA pairs. These OIDs are for
+// this testbed only. A 2.25 UUID arc cannot be used: encoding/asn1 rejects arcs above 2^31-1.
+var oidExperimentalArc = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 32473, 1}
+
+func oidExperimental(arc int) asn1.ObjectIdentifier {
+	return append(append(asn1.ObjectIdentifier(nil), oidExperimentalArc...), arc)
+}
 
 var algorithms = []Algorithm{
 	{
 		OID:             OIDMLDSA44ECDSAP256SHA256,
 		Label:           "COMPSIG-MLDSA44-ECDSA-P256-SHA256",
 		MLDSALevel:      44,
+		PQ:              mldsaComponent{level: 44},
 		Hash:            crypto.SHA256,
 		Curve:           elliptic.P256(),
 		CurveOID:        oidCurveP256,
@@ -57,6 +78,7 @@ var algorithms = []Algorithm{
 		OID:             OIDMLDSA65ECDSAP384SHA512,
 		Label:           "COMPSIG-MLDSA65-ECDSA-P384-SHA512",
 		MLDSALevel:      65,
+		PQ:              mldsaComponent{level: 65},
 		Hash:            crypto.SHA512,
 		Curve:           elliptic.P384(),
 		CurveOID:        oidCurveP384,
@@ -66,6 +88,61 @@ var algorithms = []Algorithm{
 		OID:             OIDMLDSA87ECDSAP384SHA512,
 		Label:           "COMPSIG-MLDSA87-ECDSA-P384-SHA512",
 		MLDSALevel:      87,
+		PQ:              mldsaComponent{level: 87},
+		Hash:            crypto.SHA512,
+		Curve:           elliptic.P384(),
+		CurveOID:        oidCurveP384,
+		TraditionalHash: crypto.SHA384,
+	},
+	{
+		OID:             OIDSLHDSASHA2128sECDSAP256SHA256,
+		Label:           "COMPSIG-SLHDSA-SHA2-128S-ECDSA-P256-SHA256",
+		PQ:              slhdsaComponent{params: slhdsa.SHA2_128s},
+		Hash:            crypto.SHA256,
+		Curve:           elliptic.P256(),
+		CurveOID:        oidCurveP256,
+		TraditionalHash: crypto.SHA256,
+	},
+	{
+		OID:             OIDSLHDSASHA2128fECDSAP256SHA256,
+		Label:           "COMPSIG-SLHDSA-SHA2-128F-ECDSA-P256-SHA256",
+		PQ:              slhdsaComponent{params: slhdsa.SHA2_128f},
+		Hash:            crypto.SHA256,
+		Curve:           elliptic.P256(),
+		CurveOID:        oidCurveP256,
+		TraditionalHash: crypto.SHA256,
+	},
+	{
+		OID:             OIDSLHDSASHA2192sECDSAP384SHA512,
+		Label:           "COMPSIG-SLHDSA-SHA2-192S-ECDSA-P384-SHA512",
+		PQ:              slhdsaComponent{params: slhdsa.SHA2_192s},
+		Hash:            crypto.SHA512,
+		Curve:           elliptic.P384(),
+		CurveOID:        oidCurveP384,
+		TraditionalHash: crypto.SHA384,
+	},
+	{
+		OID:             OIDSLHDSASHA2192fECDSAP384SHA512,
+		Label:           "COMPSIG-SLHDSA-SHA2-192F-ECDSA-P384-SHA512",
+		PQ:              slhdsaComponent{params: slhdsa.SHA2_192f},
+		Hash:            crypto.SHA512,
+		Curve:           elliptic.P384(),
+		CurveOID:        oidCurveP384,
+		TraditionalHash: crypto.SHA384,
+	},
+	{
+		OID:             OIDSLHDSASHA2256sECDSAP384SHA512,
+		Label:           "COMPSIG-SLHDSA-SHA2-256S-ECDSA-P384-SHA512",
+		PQ:              slhdsaComponent{params: slhdsa.SHA2_256s},
+		Hash:            crypto.SHA512,
+		Curve:           elliptic.P384(),
+		CurveOID:        oidCurveP384,
+		TraditionalHash: crypto.SHA384,
+	},
+	{
+		OID:             OIDSLHDSASHA2256fECDSAP384SHA512,
+		Label:           "COMPSIG-SLHDSA-SHA2-256F-ECDSA-P384-SHA512",
+		PQ:              slhdsaComponent{params: slhdsa.SHA2_256f},
 		Hash:            crypto.SHA512,
 		Curve:           elliptic.P384(),
 		CurveOID:        oidCurveP384,
@@ -84,11 +161,22 @@ func AlgorithmByOID(oid asn1.ObjectIdentifier) (Algorithm, error) {
 
 func AlgorithmForLevel(level int) (Algorithm, error) {
 	for _, alg := range algorithms {
-		if alg.MLDSALevel == level {
+		if alg.MLDSALevel != 0 && alg.MLDSALevel == level {
 			return alg, nil
 		}
 	}
 	return Algorithm{}, errors.Errorf("Invalid MLDSA key size for Composite ML-DSA: %d (expecting 44, 65 or 87)", level)
+}
+
+// AlgorithmForSLHDSA returns the experimental composite pair of the SLH-DSA parameter set. Only
+// the six SHA2 sets have a pair.
+func AlgorithmForSLHDSA(ps slhdsa.ParameterSet) (Algorithm, error) {
+	for _, alg := range algorithms {
+		if c, ok := alg.PQ.(slhdsaComponent); ok && c.params.OID.Equal(ps.OID) {
+			return alg, nil
+		}
+	}
+	return Algorithm{}, errors.Errorf("No composite pair for %s", ps.Name)
 }
 
 func mldsaParametersForLevel(level int) (mldsa.Parameters, error) {
@@ -134,15 +222,13 @@ func SerializePublicKey(mldsaPK, tradPK []byte) []byte {
 	return concat(mldsaPK, tradPK)
 }
 
-// DeserializePublicKey separa a chave pública nas partes ML-DSA e clássica. O tamanho da parte clássica não é verificado.
-func DeserializePublicKey(alg Algorithm, data []byte) (mldsaPK, tradPK []byte, err error) {
-	size, err := mldsaPublicKeySize(alg.MLDSALevel)
-	if err != nil {
-		return nil, nil, err
-	}
+// DeserializePublicKey splits the public key at the fixed size of the post-quantum component. The
+// size of the traditional part is not checked.
+func DeserializePublicKey(alg Algorithm, data []byte) (pqPK, tradPK []byte, err error) {
+	size := alg.PQ.PublicKeySize()
 	if len(data) <= size {
-		return nil, nil, errors.Errorf("Composite public key too short for ML-DSA-%d: got %d bytes, need more than %d",
-			alg.MLDSALevel, len(data), size)
+		return nil, nil, errors.Errorf("Composite public key too short for %s: got %d bytes, need more than %d",
+			alg.PQ.Name(), len(data), size)
 	}
 	return data[:size], data[size:], nil
 }
@@ -152,27 +238,30 @@ func SerializePrivateKey(mldsaSeed, tradSK []byte) []byte {
 	return concat(mldsaSeed, tradSK)
 }
 
+// DeserializePrivateKey splits the private key of an ML-DSA pair after the 32-byte seed.
 func DeserializePrivateKey(data []byte) (mldsaSeed, tradSK []byte, err error) {
-	if len(data) <= mldsa.PrivateKeySize {
+	return splitPrivateKey(mldsa.PrivateKeySize, data)
+}
+
+func splitPrivateKey(size int, data []byte) (pqSK, tradSK []byte, err error) {
+	if len(data) <= size {
 		return nil, nil, errors.Errorf("Composite private key too short: got %d bytes, need more than %d",
-			len(data), mldsa.PrivateKeySize)
+			len(data), size)
 	}
-	return data[:mldsa.PrivateKeySize], data[mldsa.PrivateKeySize:], nil
+	return data[:size], data[size:], nil
 }
 
 func SerializeSignatureValue(mldsaSig, tradSig []byte) []byte {
 	return concat(mldsaSig, tradSig)
 }
 
-// DeserializeSignatureValue separa a assinatura no tamanho fixo da assinatura ML-DSA. O resto é a assinatura ECDSA em DER.
-func DeserializeSignatureValue(alg Algorithm, data []byte) (mldsaSig, tradSig []byte, err error) {
-	size, err := mldsaSignatureSize(alg.MLDSALevel)
-	if err != nil {
-		return nil, nil, err
-	}
+// DeserializeSignatureValue splits the signature at the fixed size of the post-quantum signature.
+// The rest is the DER ECDSA signature.
+func DeserializeSignatureValue(alg Algorithm, data []byte) (pqSig, tradSig []byte, err error) {
+	size := alg.PQ.SignatureSize()
 	if len(data) <= size {
-		return nil, nil, errors.Errorf("Composite signature too short for ML-DSA-%d: got %d bytes, need more than %d",
-			alg.MLDSALevel, len(data), size)
+		return nil, nil, errors.Errorf("Composite signature too short for %s: got %d bytes, need more than %d",
+			alg.PQ.Name(), len(data), size)
 	}
 	return data[:size], data[size:], nil
 }
@@ -211,15 +300,21 @@ func hashBytes(h crypto.Hash, message []byte) ([]byte, error) {
 	}
 }
 
+// PublicKey holds the post-quantum component in MLDSA or in SLHDSA, according to Algorithm.PQ; the
+// other field is nil.
 type PublicKey struct {
 	Algorithm   Algorithm
 	MLDSA       *mldsa.PublicKey
+	SLHDSA      *slhdsa.PublicKey
 	Traditional *ecdsa.PublicKey
 }
 
+// PrivateKey holds the post-quantum component in MLDSA or in SLHDSA, according to Algorithm.PQ; the
+// other field is nil.
 type PrivateKey struct {
 	Algorithm   Algorithm
 	MLDSA       *mldsa.PrivateKey
+	SLHDSA      *slhdsa.PrivateKey
 	Traditional *ecdsa.PrivateKey
 }
 
@@ -241,69 +336,110 @@ type ecPrivateKeyWithoutPublic struct {
 	NamedCurve asn1.ObjectIdentifier `asn1:"explicit,tag:0"`
 }
 
-// GenerateKey gera uma chave ML-DSA e uma chave ECDSA novas.
-func GenerateKey(alg Algorithm) (*PrivateKey, error) {
-	params, err := mldsaParametersForLevel(alg.MLDSALevel)
-	if err != nil {
-		return nil, err
+// newPublicKey stores pq in the field matching its type. A type of no known component leaves both
+// fields nil, which every later operation rejects.
+func newPublicKey(alg Algorithm, pq crypto.PublicKey, trad *ecdsa.PublicKey) *PublicKey {
+	pk := &PublicKey{Algorithm: alg, Traditional: trad}
+	switch k := pq.(type) {
+	case *mldsa.PublicKey:
+		pk.MLDSA = k
+	case *slhdsa.PublicKey:
+		pk.SLHDSA = k
 	}
-	mldsaKey, err := mldsa.GenerateKey(params)
+	return pk
+}
+
+func newPrivateKey(alg Algorithm, pq crypto.Signer, trad *ecdsa.PrivateKey) *PrivateKey {
+	sk := &PrivateKey{Algorithm: alg, Traditional: trad}
+	switch k := pq.(type) {
+	case *mldsa.PrivateKey:
+		sk.MLDSA = k
+	case *slhdsa.PrivateKey:
+		sk.SLHDSA = k
+	}
+	return sk
+}
+
+// pq returns the post-quantum component as an untyped nil when neither field is set, so the
+// component's type check rejects it.
+func (pk *PublicKey) pq() crypto.PublicKey {
+	switch {
+	case pk.MLDSA != nil:
+		return pk.MLDSA
+	case pk.SLHDSA != nil:
+		return pk.SLHDSA
+	}
+	return nil
+}
+
+func (sk *PrivateKey) pq() crypto.Signer {
+	switch {
+	case sk.MLDSA != nil:
+		return sk.MLDSA
+	case sk.SLHDSA != nil:
+		return sk.SLHDSA
+	}
+	return nil
+}
+
+// GenerateKey generates fresh post-quantum and ECDSA component keys.
+func GenerateKey(alg Algorithm) (*PrivateKey, error) {
+	pqKey, err := alg.PQ.GenerateKey()
 	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to generate the ML-DSA component key")
+		return nil, errors.WithMessagef(err, "Failed to generate the %s component key", alg.PQ.Family())
 	}
 	ecKey, err := ecdsa.GenerateKey(alg.Curve, rand.Reader)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to generate the ECDSA component key")
 	}
-	return &PrivateKey{Algorithm: alg, MLDSA: mldsaKey, Traditional: ecKey}, nil
+	return newPrivateKey(alg, pqKey, ecKey), nil
 }
 
 func ParsePublicKey(alg Algorithm, data []byte) (*PublicKey, error) {
-	mldsaPK, tradPK, err := DeserializePublicKey(alg, data)
+	pqPK, tradPK, err := DeserializePublicKey(alg, data)
 	if err != nil {
 		return nil, err
 	}
-	params, err := mldsaParametersForLevel(alg.MLDSALevel)
+	pqKey, err := alg.PQ.ParsePublicKey(pqPK)
 	if err != nil {
-		return nil, err
-	}
-	mldsaKey, err := mldsa.NewPublicKey(params, mldsaPK)
-	if err != nil {
-		return nil, errors.WithMessage(err, "Invalid ML-DSA component public key")
+		return nil, errors.WithMessagef(err, "Invalid %s component public key", alg.PQ.Family())
 	}
 	ecKey, err := ecdsa.ParseUncompressedPublicKey(alg.Curve, tradPK)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Invalid ECDSA component public key")
 	}
-	return &PublicKey{Algorithm: alg, MLDSA: mldsaKey, Traditional: ecKey}, nil
+	return newPublicKey(alg, pqKey, ecKey), nil
 }
 
 func (pk *PublicKey) Bytes() ([]byte, error) {
+	pqPK, err := pk.Algorithm.PQ.PublicKeyBytes(pk.pq())
+	if err != nil {
+		return nil, err
+	}
 	tradPK, err := pk.Traditional.Bytes()
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to encode the ECDSA component public key")
 	}
-	return SerializePublicKey(pk.MLDSA.Bytes(), tradPK), nil
+	return SerializePublicKey(pqPK, tradPK), nil
 }
 
 func (pk *PublicKey) Equal(x crypto.PublicKey) bool {
 	other, ok := x.(*PublicKey)
-	return ok && pk.Algorithm.OID.Equal(other.Algorithm.OID) &&
-		pk.MLDSA.Equal(other.MLDSA) && pk.Traditional.Equal(other.Traditional)
+	if !ok || !pk.Algorithm.OID.Equal(other.Algorithm.OID) || !pk.Traditional.Equal(other.Traditional) {
+		return false
+	}
+	a, ok := pk.pq().(interface{ Equal(crypto.PublicKey) bool })
+	return ok && other.pq() != nil && a.Equal(other.pq())
 }
 
 func ParsePrivateKey(alg Algorithm, data []byte) (*PrivateKey, error) {
-	seed, tradSK, err := DeserializePrivateKey(data)
+	pqSK, tradSK, err := splitPrivateKey(alg.PQ.PrivateKeySize(), data)
 	if err != nil {
 		return nil, err
 	}
-	params, err := mldsaParametersForLevel(alg.MLDSALevel)
+	pqKey, err := alg.PQ.ParsePrivateKey(pqSK)
 	if err != nil {
-		return nil, err
-	}
-	mldsaKey, err := mldsa.NewPrivateKey(params, seed)
-	if err != nil {
-		return nil, errors.WithMessage(err, "Invalid ML-DSA component seed")
+		return nil, errors.WithMessagef(err, "Invalid %s component private key", alg.PQ.Family())
 	}
 	ecKey, err := x509.ParseECPrivateKey(tradSK)
 	if err != nil {
@@ -313,10 +449,16 @@ func ParsePrivateKey(alg Algorithm, data []byte) (*PrivateKey, error) {
 		return nil, errors.Errorf("ECDSA component key is on %s, but %s requires %s",
 			ecKey.Curve.Params().Name, alg.Label, alg.Curve.Params().Name)
 	}
-	return &PrivateKey{Algorithm: alg, MLDSA: mldsaKey, Traditional: ecKey}, nil
+	return newPrivateKey(alg, pqKey, ecKey), nil
 }
 
+// Bytes returns the raw post-quantum private key followed by the ECPrivateKey without its
+// publicKey field.
 func (sk *PrivateKey) Bytes() ([]byte, error) {
+	pqSK, err := sk.Algorithm.PQ.PrivateKeyBytes(sk.pq())
+	if err != nil {
+		return nil, err
+	}
 	scalar, err := sk.Traditional.Bytes()
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to encode the ECDSA component private key")
@@ -325,24 +467,29 @@ func (sk *PrivateKey) Bytes() ([]byte, error) {
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to encode the ECDSA component private key")
 	}
-	return SerializePrivateKey(sk.MLDSA.Bytes(), tradSK), nil
+	return SerializePrivateKey(pqSK, tradSK), nil
 }
 
 func (sk *PrivateKey) PublicKey() *PublicKey {
-	return &PublicKey{Algorithm: sk.Algorithm, MLDSA: sk.MLDSA.PublicKey(), Traditional: &sk.Traditional.PublicKey}
+	var pqPub crypto.PublicKey
+	if pq := sk.pq(); pq != nil {
+		pqPub = pq.Public()
+	}
+	return newPublicKey(sk.Algorithm, pqPub, &sk.Traditional.PublicKey)
 }
 
 func (sk *PrivateKey) Public() crypto.PublicKey {
 	return sk.PublicKey()
 }
 
-// Sign assina a mensagem inteira, não um digest.
+// Sign signs the whole message, not a digest. The post-quantum component receives the Label as its
+// context; the application ctx is already inside M'.
 func (sk *PrivateKey) Sign(random io.Reader, message []byte, opts crypto.SignerOpts) ([]byte, error) {
 	var ctx []byte
 	if o, ok := opts.(*SignerOpts); ok && o != nil {
 		ctx = o.Context
 	} else if opts != nil && opts.HashFunc() != 0 {
-		return nil, errors.Errorf("Composite ML-DSA signs the whole message, not a %s digest", opts.HashFunc())
+		return nil, errors.Errorf("Composite %s signs the whole message, not a %s digest", sk.Algorithm.PQ.Family(), opts.HashFunc())
 	}
 	if random == nil {
 		random = rand.Reader
@@ -352,10 +499,9 @@ func (sk *PrivateKey) Sign(random io.Reader, message []byte, opts crypto.SignerO
 	if err != nil {
 		return nil, err
 	}
-	// O ML-DSA recebe o Label como contexto. O ctx da aplicação já está em M'.
-	mldsaSig, err := sk.MLDSA.Sign(nil, mprime, &mldsa.Options{Context: sk.Algorithm.Label})
+	pqSig, err := sk.Algorithm.PQ.Sign(sk.pq(), mprime, []byte(sk.Algorithm.Label))
 	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to compute the ML-DSA component signature")
+		return nil, errors.WithMessagef(err, "Failed to compute the %s component signature", sk.Algorithm.PQ.Family())
 	}
 	digest, err := hashBytes(sk.Algorithm.TraditionalHash, mprime)
 	if err != nil {
@@ -365,28 +511,29 @@ func (sk *PrivateKey) Sign(random io.Reader, message []byte, opts crypto.SignerO
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to compute the ECDSA component signature")
 	}
-	return SerializeSignatureValue(mldsaSig, tradSig), nil
+	return SerializeSignatureValue(pqSig, tradSig), nil
 }
 
-// Verify só aceita a assinatura quando os dois componentes são válidos.
+// Verify accepts the signature only when both components are valid.
 func Verify(pk *PublicKey, message, signature, ctx []byte) error {
 	mprime, err := MessageRepresentative(pk.Algorithm, ctx, message)
 	if err != nil {
 		return err
 	}
-	mldsaSig, tradSig, err := DeserializeSignatureValue(pk.Algorithm, signature)
+	pqSig, tradSig, err := DeserializeSignatureValue(pk.Algorithm, signature)
 	if err != nil {
 		return err
 	}
-	if err := mldsa.Verify(pk.MLDSA, mprime, mldsaSig, &mldsa.Options{Context: pk.Algorithm.Label}); err != nil {
-		return errors.WithMessage(err, "Composite ML-DSA signature is invalid: ML-DSA component")
+	family := pk.Algorithm.PQ.Family()
+	if err := pk.Algorithm.PQ.Verify(pk.pq(), mprime, pqSig, []byte(pk.Algorithm.Label)); err != nil {
+		return errors.WithMessagef(err, "Composite %s signature is invalid: %s component", family, family)
 	}
 	digest, err := hashBytes(pk.Algorithm.TraditionalHash, mprime)
 	if err != nil {
 		return err
 	}
 	if !ecdsa.VerifyASN1(pk.Traditional, digest, tradSig) {
-		return errors.New("Composite ML-DSA signature is invalid: ECDSA component")
+		return errors.Errorf("Composite %s signature is invalid: ECDSA component", family)
 	}
 	return nil
 }

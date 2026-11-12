@@ -18,6 +18,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 	"github.com/hyperledger/fabric-protos-go-apiv2/common"
 	"github.com/hyperledger/fabric/internal/osnadmin"
 	"github.com/hyperledger/fabric/protoutil"
@@ -80,19 +81,19 @@ func executeForArgs(args []string) (output string, exit int, err error) {
 	//
 	var (
 		osnURL        string
-		caCertPool    *x509.CertPool
+		caCerts       []*x509.Certificate
 		tlsClientCert tls.Certificate
 	)
 	// TLS enabled
 	if *caFile != "" {
 		osnURL = fmt.Sprintf("https://%s", *orderer)
 		var err error
-		caCertPool = x509.NewCertPool()
 		caFilePEM, err := os.ReadFile(*caFile)
 		if err != nil {
 			return "", 1, fmt.Errorf("reading orderer CA certificate: %s", err)
 		}
-		if !caCertPool.AppendCertsFromPEM(caFilePEM) {
+		caCerts, err = pkixext.ParseCertificatesPEM(caFilePEM)
+		if err != nil || len(caCerts) == 0 {
 			return "", 1, errors.New("failed to add ca-file PEM to cert pool")
 		}
 
@@ -137,17 +138,17 @@ func executeForArgs(args []string) (output string, exit int, err error) {
 
 	switch command {
 	case join.FullCommand():
-		resp, err = osnadmin.Join(osnURL, marshaledConfigBlock, caCertPool, tlsClientCert)
+		resp, err = osnadmin.Join(osnURL, marshaledConfigBlock, caCerts, tlsClientCert)
 	case list.FullCommand():
 		if *listChannelID != "" {
-			resp, err = osnadmin.ListSingleChannel(osnURL, *listChannelID, caCertPool, tlsClientCert)
+			resp, err = osnadmin.ListSingleChannel(osnURL, *listChannelID, caCerts, tlsClientCert)
 			break
 		}
-		resp, err = osnadmin.ListAllChannels(osnURL, caCertPool, tlsClientCert)
+		resp, err = osnadmin.ListAllChannels(osnURL, caCerts, tlsClientCert)
 	case remove.FullCommand():
-		resp, err = osnadmin.Remove(osnURL, *removeChannelID, caCertPool, tlsClientCert)
+		resp, err = osnadmin.Remove(osnURL, *removeChannelID, caCerts, tlsClientCert)
 	case update.FullCommand():
-		resp, err = osnadmin.Update(osnURL, marshaledConfigEnvelope, caCertPool, tlsClientCert, *tlsHandshakeTimeShift)
+		resp, err = osnadmin.Update(osnURL, marshaledConfigEnvelope, caCerts, tlsClientCert, *tlsHandshakeTimeShift)
 	case fetch.FullCommand():
 		if *fetchBlockID != "newest" && *fetchBlockID != "oldest" && *fetchBlockID != "config" {
 			_, err = strconv.Atoi(*fetchBlockID)
@@ -155,7 +156,7 @@ func executeForArgs(args []string) (output string, exit int, err error) {
 				return "", 1, fmt.Errorf("'%s' not equal <newest|oldest|config|(number)>", *fetchBlockID)
 			}
 		}
-		resp, err = osnadmin.Fetch(osnURL, *fetchChannelID, *fetchBlockID, caCertPool, tlsClientCert, *tlsHandshakeTimeShift1)
+		resp, err = osnadmin.Fetch(osnURL, *fetchChannelID, *fetchBlockID, caCerts, tlsClientCert, *tlsHandshakeTimeShift1)
 	}
 	if err != nil {
 		return errorOutput(err), 1, nil

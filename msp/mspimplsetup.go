@@ -133,7 +133,7 @@ func (msp *bccspmsp) setupCAs(conf *m.FabricMSPConfig) error {
 		msp.opts.Intermediates.AddCert(cert)
 		intermediates = append(intermediates, cert)
 	}
-	msp.setCompositeVerifyCerts(roots, intermediates)
+	msp.extIdentity = newExtVerifyCerts(msp.opts, roots, intermediates)
 
 	// Load root and intermediate CA identities
 	// Recall that when an identity is created, its certificate gets sanitized
@@ -169,7 +169,7 @@ func (msp *bccspmsp) setupCAs(conf *m.FabricMSPConfig) error {
 		msp.opts.Intermediates.AddCert(id.(*identity).cert)
 		intermediates = append(intermediates, id.(*identity).cert)
 	}
-	msp.setCompositeVerifyCerts(roots, intermediates)
+	msp.extIdentity = newExtVerifyCerts(msp.opts, roots, intermediates)
 
 	return nil
 }
@@ -491,6 +491,8 @@ func (msp *bccspmsp) setupTLSCAs(conf *m.FabricMSPConfig) error {
 		opts.Intermediates.AddCert(cert)
 	}
 
+	msp.extTLS = newExtVerifyCerts(opts, rootCerts, intermediateCerts)
+
 	// ensure that our CAs are properly formed and that they are valid
 	for _, cert := range append(append([]*x509.Certificate{}, rootCerts...), intermediateCerts...) {
 		if cert == nil {
@@ -668,8 +670,9 @@ func (msp *bccspmsp) setupV142(conf *m.FabricMSPConfig) error {
 }
 
 func (msp *bccspmsp) setupV3(conf *m.FabricMSPConfig) error {
-	// Habilita a composite antes do preSetupV142, que valida as cadeias das CAs.
-	msp.compositeSupported = true
+	// Enables the pkixext algorithms (Composite ML-DSA, SLH-DSA) before preSetupV142, which
+	// validates the CA chains.
+	msp.extSupported = true
 
 	err := msp.preSetupV142(conf)
 	if err != nil {

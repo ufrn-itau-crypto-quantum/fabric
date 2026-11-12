@@ -13,6 +13,7 @@ import (
 
 	"github.com/hyperledger/fabric-lib-go/bccsp"
 	"github.com/hyperledger/fabric-lib-go/bccsp/composite"
+	"github.com/hyperledger/fabric-lib-go/bccsp/slhdsa"
 	"github.com/pkg/errors"
 )
 
@@ -50,11 +51,13 @@ func New(csp bccsp.BCCSP, key bccsp.Key) (crypto.Signer, error) {
 
 	pk, err := x509.ParsePKIXPublicKey(raw)
 	if err != nil {
-		compositePK, compositeErr := composite.ParsePKIXPublicKey(raw)
-		if compositeErr != nil {
+		if compositePK, compositeErr := composite.ParsePKIXPublicKey(raw); compositeErr == nil {
+			pk = compositePK
+		} else if slhdsaPK, slhdsaErr := slhdsa.ParsePKIXPublicKey(raw); slhdsaErr == nil {
+			pk = slhdsaPK
+		} else {
 			return nil, errors.Wrap(err, "failed marshalling der to public key")
 		}
-		pk = compositePK
 	}
 
 	return &bccspCryptoSigner{csp, key, pk}, nil

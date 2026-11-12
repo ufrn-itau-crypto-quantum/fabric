@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -283,12 +284,14 @@ func (gServer *GRPCServer) SetClientRootCAs(clientRoots [][]byte) error {
 	gServer.lock.Lock()
 	defer gServer.lock.Unlock()
 
-	certPool := x509.NewCertPool()
+	var certs []*x509.Certificate
 	for _, clientRoot := range clientRoots {
-		if !certPool.AppendCertsFromPEM(clientRoot) {
+		parsed, err := pkixext.ParseCertificatesPEM(clientRoot)
+		if err != nil || len(parsed) == 0 {
 			return errors.New("failed to set client root certificate(s)")
 		}
+		certs = append(certs, parsed...)
 	}
-	gServer.tls.SetClientCAs(certPool)
+	gServer.tls.SetClientRoots(certs)
 	return nil
 }

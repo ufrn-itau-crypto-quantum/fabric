@@ -17,14 +17,14 @@ import (
 )
 
 // Update an OSN to existing channel.
-func Update(osnURL string, blockBytes []byte, caCertPool *x509.CertPool, tlsClientCert tls.Certificate, timeShift time.Duration) (*http.Response, error) {
+func Update(osnURL string, blockBytes []byte, caCerts []*x509.Certificate, tlsClientCert tls.Certificate, timeShift time.Duration) (*http.Response, error) {
 	url := fmt.Sprintf("%s/participation/v1/channels", osnURL)
 	req, err := createUpdateRequest(url, blockBytes)
 	if err != nil {
 		return nil, err
 	}
 
-	return httpDoTimeShift(req, caCertPool, tlsClientCert, timeShift)
+	return httpDoTimeShift(req, caCerts, tlsClientCert, timeShift)
 }
 
 func createUpdateRequest(url string, envelopeBytes []byte) (*http.Request, error) {

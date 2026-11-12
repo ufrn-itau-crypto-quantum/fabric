@@ -106,12 +106,11 @@ type bccspmsp struct {
 	// key sign and verify with that key instead of the one in the SubjectPublicKeyInfo
 	hybridSignatures bool
 
-	// compositeSupported enables Composite ML-DSA from MSP v3 on. The lists are the certificates
-	// of msp.opts, and compositeChain tells whether any of them is composite.
-	compositeSupported     bool
-	compositeChain         bool
-	compositeRoots         []*x509.Certificate
-	compositeIntermediates []*x509.Certificate
+	// extSupported enables the algorithms registered in pkixext, Composite ML-DSA and SLH-DSA, from
+	// MSP v3 on. extIdentity holds the certificates of msp.opts and extTLS those of the TLS CAs.
+	extSupported bool
+	extIdentity  extVerifyCerts
+	extTLS       extVerifyCerts
 
 	// NodeOUs configuration
 	ouEnforcement bool

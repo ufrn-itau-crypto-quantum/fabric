@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 	"github.com/hyperledger/fabric/internal/pkg/comm"
 )
 
@@ -24,6 +25,9 @@ type TLS struct {
 	TimeShift          time.Duration
 }
 
+// Config returns the server TLS configuration, or nil when TLS is disabled. When a client CA needs
+// pkixext, client certificates are verified by pkixext.ConfigureServerVerification and connection
+// states carry no VerifiedChains; ExternalClientVerification reports that case.
 func (t TLS) Config() (*tls.Config, error) {
 	var tlsConfig *tls.Config
 
@@ -33,11 +37,11 @@ func (t TLS) Config() (*tls.Config, error) {
 			return nil, err
 		}
 		caCertPool := x509.NewCertPool()
-		for _, caPath := range t.ClientCACertFiles {
-			caPem, err := os.ReadFile(caPath)
-			if err != nil {
-				return nil, err
-			}
+		caPEMs, err := t.clientCAPEMs()
+		if err != nil {
+			return nil, err
+		}
+		for _, caPem := range caPEMs {
 			caCertPool.AppendCertsFromPEM(caPem)
 		}
 		tlsConfig = &tls.Config{
@@ -57,7 +61,36 @@ func (t TLS) Config() (*tls.Config, error) {
 		} else {
 			tlsConfig.ClientAuth = tls.VerifyClientCertIfGiven
 		}
+		if roots, err := pkixext.ParseCertificatesPEM(caPEMs...); err == nil && pkixext.HasExternal(roots) {
+			pkixext.ConfigureServerVerification(tlsConfig, roots)
+		}
 	}
 
 	return tlsConfig, nil
+}
+
+func (t TLS) clientCAPEMs() ([][]byte, error) {
+	var pems [][]byte
+	for _, caPath := range t.ClientCACertFiles {
+		caPem, err := os.ReadFile(caPath)
+		if err != nil {
+			return nil, err
+		}
+		pems = append(pems, caPem)
+	}
+	return pems, nil
+}
+
+// ExternalClientVerification reports whether Config verifies client certificates with pkixext. A
+// CA file that cannot be read counts as false.
+func (t TLS) ExternalClientVerification() bool {
+	if !t.Enabled {
+		return false
+	}
+	pems, err := t.clientCAPEMs()
+	if err != nil {
+		return false
+	}
+	roots, err := pkixext.ParseCertificatesPEM(pems...)
+	return err == nil && pkixext.HasExternal(roots)
 }

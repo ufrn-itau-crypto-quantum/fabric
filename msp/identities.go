@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/hyperledger/fabric-lib-go/bccsp"
-	"github.com/hyperledger/fabric-lib-go/bccsp/composite"
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 	"github.com/hyperledger/fabric-lib-go/common/flogging"
 	"github.com/hyperledger/fabric-protos-go-apiv2/msp"
 	"github.com/pkg/errors"
@@ -328,18 +328,19 @@ func (id *signingidentity) Sign(msg []byte) ([]byte, error) {
 }
 
 // signsFullMessage reports whether the key in use signs the message itself rather than a digest
-// of it. Ed25519, ML-DSA (FIPS 204) and Composite ML-DSA do; ECDSA and RSA sign a digest.
+// of it. Ed25519, ML-DSA (FIPS 204), SLH-DSA (FIPS 205) and Composite do; ECDSA and RSA sign a
+// digest.
 //
 // algo must be the algorithm of the key that signs. A hybrid certificate declares ECDSA in its
 // SubjectPublicKeyInfo while its identity signs with the alternative ML-DSA key. Go does not
-// know the Composite ML-DSA OIDs, so a composite key is recognized from the certificate's
-// SubjectPublicKeyInfo instead.
+// know the Composite and SLH-DSA OIDs, so such a key is recognized from the certificate's
+// SubjectPublicKeyInfo through the pkixext registry instead.
 //
 // Passing a digest to an ML-DSA signer does not fail loudly: it produces a valid signature
 // over the wrong input, which only another implementation making the same mistake accepts.
 func signsFullMessage(algo x509.PublicKeyAlgorithm, cert *x509.Certificate) bool {
 	return algo == x509.Ed25519 || algo == x509.MLDSA ||
-		composite.IsPKIXPublicKey(cert.RawSubjectPublicKeyInfo)
+		pkixext.IsExternalPublicKey(cert.RawSubjectPublicKeyInfo)
 }
 
 // GetPublicVersion returns the public version of this identity,

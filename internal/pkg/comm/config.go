@@ -14,6 +14,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 	"github.com/hyperledger/fabric-lib-go/common/flogging"
 	"github.com/hyperledger/fabric-lib-go/common/metrics"
 	"github.com/pkg/errors"
@@ -170,13 +171,23 @@ func (cc ClientConfig) DialOptions() ([]grpc.DialOption, error) {
 		return nil, err
 	}
 	if tlsConfig != nil {
-		transportCreds := &DynamicClientCredentials{TLSConfig: tlsConfig}
+		transportCreds := &DynamicClientCredentials{TLSConfig: tlsConfig, ExternalRoots: externalRoots(cc.SecOpts.ServerRootCAs)}
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(transportCreds))
 	} else {
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
 	return dialOpts, nil
+}
+
+// externalRoots returns the parsed roots when one of them needs pkixext to verify server chains,
+// and nil otherwise.
+func externalRoots(pemRoots [][]byte) []*x509.Certificate {
+	roots, err := pkixext.ParseCertificatesPEM(pemRoots...)
+	if err != nil || !pkixext.HasExternal(roots) {
+		return nil
+	}
+	return roots
 }
 
 func (cc ClientConfig) Dial(address string) (*grpc.ClientConn, error) {

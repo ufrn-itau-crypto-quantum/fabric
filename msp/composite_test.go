@@ -256,10 +256,10 @@ func TestCompositeIdentityRejectedBeforeV3(t *testing.T) {
 	require.ErrorContains(t, err, "unknown authority")
 }
 
-// TestCompositeChainIgnoredForTLS fixa que a validação composite vale só para as cadeias de identidade.
-// Uma intermediária de TLS assinada em composite é recusada, mesmo sob a raiz composite que o MSP aceita
-// para identidades.
-func TestCompositeChainIgnoredForTLS(t *testing.T) {
+// TestCompositeChainForTLS covers a TLS intermediate signed in composite under the composite root:
+// MSP v3 validates the TLS CAs through pkixext, as it does the identity CAs, and earlier versions
+// refuse the intermediate.
+func TestCompositeChainForTLS(t *testing.T) {
 	caKey := newCompositeKey(t, 65)
 	ca := issueCompositeTestCert(t, compositeCATemplate("composite-ca"), nil, caKey.PublicKey(), caKey)
 	signerKey := newCompositeKey(t, 65)
@@ -270,8 +270,8 @@ func TestCompositeChainIgnoredForTLS(t *testing.T) {
 	writePEM(t, filepath.Join(dir, "tlscacerts", "tlsroot.pem"), "CERTIFICATE", ca.Raw)
 	writePEM(t, filepath.Join(dir, "tlsintermediatecerts", "tlsinter.pem"), "CERTIFICATE", tlsInter.Raw)
 
-	_, err := getLocalMSPWithVersionAndError(t, dir, MSPv3_0)
-	require.ErrorContains(t, err, "x509: certificate signed by unknown authority")
+	thisMSP := getLocalMSPWithVersion(t, dir, MSPv3_0)
+	require.Len(t, thisMSP.GetTLSIntermediateCerts(), 1)
 }
 
 // TestCompositeChainUsesSanitizedRoot fixa que a validação composite usa os certificados depois do

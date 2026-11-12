@@ -11,12 +11,21 @@ import (
 	"crypto/x509"
 	"net/http"
 	"time"
+
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 )
 
-func httpClient(caCertPool *x509.CertPool, tlsClientCert tls.Certificate, timeShift time.Duration) *http.Client {
+// httpClient returns a client that trusts caCerts, or the system roots when caCerts is empty. When
+// a CA needs pkixext, each connection verifies the orderer with pkixext.ClientConfigFor.
+func httpClient(caCerts []*x509.Certificate, tlsClientCert tls.Certificate, timeShift time.Duration) *http.Client {
 	tlsConfig := &tls.Config{
-		RootCAs:      caCertPool,
 		Certificates: []tls.Certificate{tlsClientCert},
+	}
+	if len(caCerts) > 0 {
+		tlsConfig.RootCAs = x509.NewCertPool()
+		for _, cert := range caCerts {
+			tlsConfig.RootCAs.AddCert(cert)
+		}
 	}
 
 	if timeShift > 0 {
@@ -25,27 +34,31 @@ func httpClient(caCertPool *x509.CertPool, tlsClientCert tls.Certificate, timeSh
 		}
 	}
 
+	transport := &http.Transport{
+		TLSClientConfig: tlsConfig,
+	}
+	if pkixext.HasExternal(caCerts) {
+		transport.DialTLSContext = pkixext.DialTLSContext(tlsConfig, caCerts)
+	}
 	return &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
+		Transport: transport,
 	}
 }
 
-func httpDo(req *http.Request, caCertPool *x509.CertPool, tlsClientCert tls.Certificate) (*http.Response, error) {
-	return httpDoTimeShift(req, caCertPool, tlsClientCert, 0)
+func httpDo(req *http.Request, caCerts []*x509.Certificate, tlsClientCert tls.Certificate) (*http.Response, error) {
+	return httpDoTimeShift(req, caCerts, tlsClientCert, 0)
 }
 
-func httpDoTimeShift(req *http.Request, caCertPool *x509.CertPool, tlsClientCert tls.Certificate, timeShift time.Duration) (*http.Response, error) {
-	client := httpClient(caCertPool, tlsClientCert, timeShift)
+func httpDoTimeShift(req *http.Request, caCerts []*x509.Certificate, tlsClientCert tls.Certificate, timeShift time.Duration) (*http.Response, error) {
+	client := httpClient(caCerts, tlsClientCert, timeShift)
 	return client.Do(req)
 }
 
-func httpGet(url string, caCertPool *x509.CertPool, tlsClientCert tls.Certificate) (*http.Response, error) {
-	return httpGetTimeShift(url, caCertPool, tlsClientCert, 0)
+func httpGet(url string, caCerts []*x509.Certificate, tlsClientCert tls.Certificate) (*http.Response, error) {
+	return httpGetTimeShift(url, caCerts, tlsClientCert, 0)
 }
 
-func httpGetTimeShift(url string, caCertPool *x509.CertPool, tlsClientCert tls.Certificate, timeShift time.Duration) (*http.Response, error) {
-	client := httpClient(caCertPool, tlsClientCert, timeShift)
+func httpGetTimeShift(url string, caCerts []*x509.Certificate, tlsClientCert tls.Certificate, timeShift time.Duration) (*http.Response, error) {
+	client := httpClient(caCerts, tlsClientCert, timeShift)
 	return client.Get(url)
 }
