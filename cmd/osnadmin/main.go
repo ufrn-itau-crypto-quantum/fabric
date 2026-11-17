@@ -97,7 +97,7 @@ func executeForArgs(args []string) (output string, exit int, err error) {
 			return "", 1, errors.New("failed to add ca-file PEM to cert pool")
 		}
 
-		tlsClientCert, err = tls.LoadX509KeyPair(*clientCert, *clientKey)
+		tlsClientCert, err = pkixext.LoadX509KeyPair(*clientCert, *clientKey)
 		if err != nil {
 			return "", 1, fmt.Errorf("loading client cert/key pair: %s", err)
 		}

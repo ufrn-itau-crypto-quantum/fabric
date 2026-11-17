@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/hyperledger/fabric-lib-go/bccsp/factory"
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 	"github.com/hyperledger/fabric-lib-go/common/flogging"
 	floggingmetrics "github.com/hyperledger/fabric-lib-go/common/flogging/metrics"
 	"github.com/hyperledger/fabric-lib-go/common/metrics"
@@ -191,6 +192,7 @@ func (c custodianLauncherAdapter) Stop(ccid string) error {
 
 func serve(args []string) error {
 	logger.Infof("Starting %s", version.GetInfo())
+	logger.Info(pkixext.TLSSchemesLog())
 
 	// Info logging for peer config, includes core.yaml settings and environment variable overrides
 	allSettings := viper.AllSettings()

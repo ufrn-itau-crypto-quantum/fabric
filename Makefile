@@ -82,6 +82,8 @@ METADATA_VAR += DockerNamespace=$(DOCKER_NS)
 GO_VER := $(shell grep '^go[ \t]' < go.mod)
 GO_VER := $(strip $(GO_VER:go=))
 GO_TAGS ?=
+# Image that provides the Go toolchain to the image builds, see images/peer/Dockerfile.
+GO_IMAGE ?= golang:$(GO_VER)
 
 RELEASE_EXES = orderer $(TOOLS_EXES)
 RELEASE_IMAGES = baseos ccenv orderer peer
@@ -255,6 +257,7 @@ $(BUILD_DIR)/images/%/$(DUMMY):
 	@mkdir -p $(@D)
 	$(DBUILD) -f images/$*/Dockerfile \
 		--build-arg GO_VER=$(GO_VER) \
+		--build-arg GO_IMAGE=$(GO_IMAGE) \
 		--build-arg UBUNTU_VER=$(UBUNTU_VER) \
 		--build-arg FABRIC_VER=$(FABRIC_VER) \
 		--build-arg TARGETARCH=$(ARCH) \

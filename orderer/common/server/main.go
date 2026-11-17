@@ -21,6 +21,7 @@ import (
 
 	"github.com/hyperledger/fabric-lib-go/bccsp"
 	"github.com/hyperledger/fabric-lib-go/bccsp/factory"
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 	"github.com/hyperledger/fabric-lib-go/common/flogging"
 	floggingmetrics "github.com/hyperledger/fabric-lib-go/common/flogging/metrics"
 	"github.com/hyperledger/fabric-lib-go/common/metrics"
@@ -205,6 +206,7 @@ func Main() {
 	)
 
 	logger.Infof("Starting %s", metadata.GetVersionInfo())
+	logger.Info(pkixext.TLSSchemesLog())
 	handleSignals(addPlatformSignals(map[os.Signal]func(){
 		syscall.SIGTERM: func() {
 			grpcServer.Stop()

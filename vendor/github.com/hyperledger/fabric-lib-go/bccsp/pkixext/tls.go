@@ -7,16 +7,74 @@ SPDX-License-Identifier: Apache-2.0
 package pkixext
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"net"
+	"os"
 	"slices"
 	"time"
 
 	"github.com/pkg/errors"
 )
+
+// X509KeyPair is tls.X509KeyPair that also accepts a PKCS #8 key of a registered scheme, which
+// crypto/x509 does not parse. Every CERTIFICATE block of certPEM goes into the chain, leaf first,
+// and the key must match the public key of the leaf.
+func X509KeyPair(certPEM, keyPEM []byte) (tls.Certificate, error) {
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err == nil {
+		return pair, nil
+	}
+	var block *pem.Block
+	for rest := keyPEM; ; {
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			return tls.Certificate{}, err
+		}
+		if block.Type == "PRIVATE KEY" {
+			break
+		}
+	}
+	key, extErr := ParsePKCS8PrivateKey(block.Bytes)
+	if extErr != nil {
+		return tls.Certificate{}, err
+	}
+	certs, certErr := ParseCertificatesPEM(certPEM)
+	if certErr != nil {
+		return tls.Certificate{}, certErr
+	}
+	if len(certs) == 0 {
+		return tls.Certificate{}, errors.New("No certificate in the TLS certificate file")
+	}
+	spki, mErr := MarshalPKIXPublicKey(key.Public())
+	if mErr != nil {
+		return tls.Certificate{}, mErr
+	}
+	if !bytes.Equal(spki, certs[0].RawSubjectPublicKeyInfo) {
+		return tls.Certificate{}, errors.New("Private key does not match the public key of the TLS certificate")
+	}
+	pair = tls.Certificate{PrivateKey: key, Leaf: certs[0]}
+	for _, cert := range certs {
+		pair.Certificate = append(pair.Certificate, cert.Raw)
+	}
+	return pair, nil
+}
+
+// LoadX509KeyPair is X509KeyPair over files.
+func LoadX509KeyPair(certFile, keyFile string) (tls.Certificate, error) {
+	certPEM, err := os.ReadFile(certFile)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	keyPEM, err := os.ReadFile(keyFile)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return X509KeyPair(certPEM, keyPEM)
+}
 
 // TLSVerifyOptions are the options of VerifyTLSPeer. KeyUsage is the role the peer certificate must
 // allow: ServerAuth when verifying a server, ClientAuth when verifying a client.

@@ -34,6 +34,8 @@ import (
 	gatewayconfig "github.com/hyperledger/fabric/internal/pkg/gateway/config"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
+
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 )
 
 // ExternalBuilder represents the configuration structure of
@@ -502,7 +504,7 @@ func GetClientCertificate() (tls.Certificate, error) {
 		return cert, errors.WithMessage(err,
 			"error loading client TLS certificate")
 	}
-	cert, err = tls.X509KeyPair(clientCert, clientKey)
+	cert, err = pkixext.X509KeyPair(clientCert, clientKey)
 	if err != nil {
 		return cert, errors.WithMessage(err,
 			"error parsing client TLS key pair")

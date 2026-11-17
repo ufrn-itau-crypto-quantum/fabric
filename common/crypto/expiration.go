@@ -133,10 +133,15 @@ func CertificatesWithSamePublicKey(der1, der2 []byte) error {
 }
 
 // publicKeyFromCertificate returns the public key of the given ASN1 DER certificate.
+// A key that crypto/x509 does not parse, such as SLH-DSA or composite, is returned as the
+// SubjectPublicKeyInfo of the certificate, already in DER.
 func publicKeyFromCertificate(der []byte) ([]byte, error) {
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
 		return nil, err
+	}
+	if cert.PublicKeyAlgorithm == x509.UnknownPublicKeyAlgorithm {
+		return cert.RawSubjectPublicKeyInfo, nil
 	}
 	return x509.MarshalPKIXPublicKey(cert.PublicKey)
 }

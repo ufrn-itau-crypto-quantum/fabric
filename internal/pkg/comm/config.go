@@ -287,7 +287,7 @@ func (so SecureOptions) ClientCertificate() (tls.Certificate, error) {
 	if so.Key == nil || so.Certificate == nil {
 		return tls.Certificate{}, errors.New("both Key and Certificate are required when using mutual TLS")
 	}
-	cert, err := tls.X509KeyPair(so.Certificate, so.Key)
+	cert, err := pkixext.X509KeyPair(so.Certificate, so.Key)
 	if err != nil {
 		return tls.Certificate{}, errors.WithMessage(err, "failed to create key pair")
 	}

@@ -16,6 +16,8 @@ import (
 	"github.com/hyperledger/fabric/internal/pkg/comm"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
+
+	"github.com/hyperledger/fabric-lib-go/bccsp/pkixext"
 )
 
 // PeerClient represents a client for communicating with a peer
@@ -151,7 +153,7 @@ func GetClientCertificate() (tls.Certificate, error) {
 		return tls.Certificate{}, err
 	}
 
-	cert, err := tls.X509KeyPair(certificate, key)
+	cert, err := pkixext.X509KeyPair(certificate, key)
 	if err != nil {
 		return tls.Certificate{}, errors.WithMessage(err, "failed to load client certificate")
 	}

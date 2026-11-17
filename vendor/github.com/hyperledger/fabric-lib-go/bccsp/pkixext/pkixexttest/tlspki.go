@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package pkixexttest
 
 import (
+	"crypto"
 	"crypto/mldsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -21,11 +22,11 @@ import (
 
 var serial atomic.Int64
 
-// TLSPKI is the TLS CA of an organization: an SLH-DSA root and intermediate that issue ML-DSA-44
-// leaves, as the runner sets it up for an SLH-DSA identity.
+// TLSPKI is the TLS CA of an organization: a root and an intermediate that issue the leaves, by
+// default with ML-DSA-44 keys.
 type TLSPKI struct {
 	Root, Intermediate *x509.Certificate
-	intermediateKey    *slhdsa.PrivateKey
+	intermediateKey    crypto.Signer
 }
 
 func template(name string) *x509.Certificate {
@@ -38,9 +39,16 @@ func template(name string) *x509.Certificate {
 	}
 }
 
-// NewTLSPKI creates the root and intermediate of org with the parameter set ps.
+// NewTLSPKI creates the root and intermediate of org with SLH-DSA keys of the parameter set ps, as
+// the runner sets them up for an SLH-DSA identity.
 func NewTLSPKI(org string, ps slhdsa.ParameterSet) (*TLSPKI, error) {
-	rootKey, err := slhdsa.GenerateKey(ps)
+	return NewTLSPKIWith(org, func() (crypto.Signer, error) { return slhdsa.GenerateKey(ps) })
+}
+
+// NewTLSPKIWith creates the root and intermediate of org with keys from generate, of any algorithm
+// that crypto/x509 or a registered scheme encodes.
+func NewTLSPKIWith(org string, generate func() (crypto.Signer, error)) (*TLSPKI, error) {
+	rootKey, err := generate()
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +58,7 @@ func NewTLSPKI(org string, ps slhdsa.ParameterSet) (*TLSPKI, error) {
 	if err != nil {
 		return nil, err
 	}
-	interKey, err := slhdsa.GenerateKey(ps)
+	interKey, err := generate()
 	if err != nil {
 		return nil, err
 	}
@@ -72,16 +80,16 @@ func (p *TLSPKI) AnchorsPEM() []byte {
 // IssueLeaf issues an ML-DSA-44 leaf for host, valid for 127.0.0.1 too and for both TLS roles, and
 // returns its certificate and PKCS #8 key in PEM.
 func (p *TLSPKI) IssueLeaf(host string) (certPEM, keyPEM []byte, err error) {
-	key, err := mldsa.GenerateKey(mldsa.MLDSA44())
+	return p.IssueLeafWith(host, mldsa.MLDSA44())
+}
+
+// IssueLeafWith is IssueLeaf with the ML-DSA parameter set of the leaf.
+func (p *TLSPKI) IssueLeafWith(host string, params mldsa.Parameters) (certPEM, keyPEM []byte, err error) {
+	key, err := mldsa.GenerateKey(params)
 	if err != nil {
 		return nil, nil, err
 	}
-	tpl := template(host)
-	tpl.DNSNames = []string{host}
-	tpl.IPAddresses = []net.IP{net.IPv4(127, 0, 0, 1)}
-	tpl.KeyUsage = x509.KeyUsageDigitalSignature
-	tpl.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
-	cert, err := CreateCertificate(tpl, p.Intermediate, key.Public(), p.intermediateKey)
+	cert, err := p.IssueLeafFor(host, key.Public())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -90,6 +98,17 @@ func (p *TLSPKI) IssueLeaf(host string) (certPEM, keyPEM []byte, err error) {
 		return nil, nil, err
 	}
 	return PEM(cert), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), nil
+}
+
+// IssueLeafFor issues a leaf for host, valid for 127.0.0.1 too and for both TLS roles, with the
+// public key pub of any algorithm that crypto/x509 or a registered scheme encodes.
+func (p *TLSPKI) IssueLeafFor(host string, pub crypto.PublicKey) (*x509.Certificate, error) {
+	tpl := template(host)
+	tpl.DNSNames = []string{host}
+	tpl.IPAddresses = []net.IP{net.IPv4(127, 0, 0, 1)}
+	tpl.KeyUsage = x509.KeyUsageDigitalSignature
+	tpl.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}
+	return CreateCertificate(tpl, p.Intermediate, pub, p.intermediateKey)
 }
 
 func PEM(cert *x509.Certificate) []byte {

@@ -20,6 +20,13 @@
 # Build image
 ###############################################################################
 
+# GO_IMAGE provides /usr/local/go: the official golang image by default, or the go-tlsext image of
+# blockchain/src/go-tlsext, whose crypto/tls accepts registered signature schemes.
+ARG GO_VER
+ARG GO_IMAGE=golang:${GO_VER}
+ARG UBUNTU_VER
+FROM ${GO_IMAGE} AS go
+
 ARG UBUNTU_VER
 FROM ubuntu:${UBUNTU_VER} as builder
 
@@ -35,8 +42,8 @@ RUN apt update && apt install -y \
     curl \
     make
 
-RUN curl -sL https://go.dev/dl/go${GO_VER}.${TARGETOS}-${TARGETARCH}.tar.gz | tar zxf - -C /usr/local
-ENV PATH="/usr/local/go/bin:$PATH"
+COPY --from=go /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:$PATH" GOTOOLCHAIN=local
 
 ADD . .
 
@@ -61,8 +68,8 @@ RUN apt update && apt install -y \
     jq \
     tzdata
 
-RUN curl -sL https://go.dev/dl/go${GO_VER}.${TARGETOS}-${TARGETARCH}.tar.gz | tar zxvf - -C /usr/local
-ENV PATH="/usr/local/go/bin:$PATH"
+COPY --from=go /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:$PATH" GOTOOLCHAIN=local
 
 # set up nsswitch.conf for Go's "netgo" implementation
 # - https://github.com/golang/go/blob/go1.9.1/src/net/conf.go#L194-L275

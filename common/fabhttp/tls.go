@@ -32,7 +32,7 @@ func (t TLS) Config() (*tls.Config, error) {
 	var tlsConfig *tls.Config
 
 	if t.Enabled {
-		cert, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile)
+		cert, err := pkixext.LoadX509KeyPair(t.CertFile, t.KeyFile)
 		if err != nil {
 			return nil, err
 		}
